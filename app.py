@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.instances import USER_MANAGER, CHAT_MANAGER
+from backend.instances import USER_MANAGER, CHAT_MANAGER, UUID_INDEX
 from backend.routes import user_routes, chat_routes, web_socket
 import uvicorn
 import os
@@ -16,6 +16,9 @@ async def lifespan(app: FastAPI):
     if not os.path.exists("chat_manager.pkl"):
         print("Creating chat_manager.pkl...")
         CHAT_MANAGER.save_chat_database()
+    if not os.path.exists(UUID_INDEX.path):
+        UUID_INDEX.save()
+    UUID_INDEX.load()
     print("Database initialization complete.")
 
     yield
@@ -23,6 +26,7 @@ async def lifespan(app: FastAPI):
     print("Saving all AVL trees before shutdown...")
     USER_MANAGER.save()
     CHAT_MANAGER.save_chat_database()
+    UUID_INDEX.save()
     print("Data saved.")
 
 
