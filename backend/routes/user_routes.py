@@ -9,9 +9,7 @@ router = APIRouter()
 
 @router.post('/login')
 async def login(request: Request):
-
     error_message = "Username or password is Invalid."
-
     data = await request.json()
     username = data.get('username')
     password = data.get('password')
@@ -59,7 +57,6 @@ async def register(request: Request):
     new_user = UserNew(uuid= new_user_uuid, username= username, password= password, is_public= is_public)
 
     USER_MANAGER.add_user(new_user_uuid, new_user)
-
     USER_MANAGER.save()
 
     return {
@@ -67,3 +64,16 @@ async def register(request: Request):
         "id": new_user_uuid,
         "username": username,
     }
+
+@router.get('/{username}')
+async def get_user(username: str):
+    error_message = "User not found."
+    if username not in UUID_INDEX:
+        return {"error": error_message}
+
+    user_uuid = UUID_INDEX[username]
+    user_status, user_obj = find_user(user_uuid)
+    if not user_status or user_obj is None:
+        return {"error": error_message}
+
+    return user_obj.to_dict()
