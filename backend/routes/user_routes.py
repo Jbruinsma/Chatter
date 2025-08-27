@@ -4,7 +4,7 @@ import uuid
 from typing import Dict, Any
 
 from backend.instances import UUID_INDEX, USER_MANAGER
-from backend.models.user_new import UserNew
+from backend.models.user_new import User
 from backend.utils.user_utils import find_user
 
 router = APIRouter()
@@ -56,7 +56,7 @@ async def register(request: Request):
 
     UUID_INDEX[username] = str(uuid.uuid4())
     new_user_uuid = UUID_INDEX[username]
-    new_user = UserNew(uuid= new_user_uuid, username= username, password= password, is_public= is_public)
+    new_user = User(uuid= new_user_uuid, username= username, password= password, is_public= is_public)
 
     USER_MANAGER.add_user(new_user_uuid, new_user)
     USER_MANAGER.save()
