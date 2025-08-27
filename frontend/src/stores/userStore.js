@@ -5,15 +5,18 @@ export const useUserStore = defineStore(
   'user',
   () => {
     const username = ref('')
+    const id = ref('')
     const isLoggedIn = ref(false)
 
-    function login(user) {
-      username.value = user
+    function login(loggedInUsername, loggedInId) {
+      username.value = loggedInUsername
+      id.value = loggedInId
       isLoggedIn.value = true
     }
 
     function logout() {
       username.value = ''
+      id.value = ''
       isLoggedIn.value = false
     }
 

@@ -63,17 +63,30 @@ const statusMessage = computed(() => isPublic.value ? 'Anyone' : 'Only friends')
 const errorMessage = ref('')
 const successMessage = ref('')
 
+const chatStore = useChatStore()
+const userStore = useUserStore()
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 onMounted(() => {
-  const chatStore = useChatStore()
-  const userStore = useUserStore()
   if (userStore.isLoggedIn) {
     userStore.logout()
     chatStore.disconnect()
   }
 })
 
-function setErrorMessage(msg){ errorMessage.value = msg; successMessage.value = '' }
-function setSuccessMessage(msg){ successMessage.value = msg; errorMessage.value = '' }
+function setErrorMessage(msg){
+  errorMessage.value = msg
+  successMessage.value = ''
+}
+
+async function setSuccessMessage(msg){
+
+  successMessage.value = msg
+  errorMessage.value = ''
+  await sleep(1500)
+  successMessage.value = ''
+}
 
 function setEntryPoint(point){
   isLogin.value = point === 'login'
@@ -99,28 +112,39 @@ async function handleSubmit(){
     try {
       const url = `${BASE_API_LINK}/users/login`
       const response = await postToAPI(url, { username: username.value, password: password.value })
-      if (response.error){ setErrorMessage(response.error) }
-      else {
-        const userStore = useUserStore()
-        userStore.login(username.value)
-        await router.push('/dashboard')
-      }
+      await handleResponse(response)
     } catch (e) { setErrorMessage(e.message) }
-    return
+  } else {
+    if (password.value !== confirmPassword.value) {
+      setErrorMessage('Passwords do not match');
+      return
+    }
+    try {
+      const url = `${BASE_API_LINK}/users/register`
+      const response = await postToAPI(url, {
+        username: username.value,
+        password: password.value,
+        is_public: isPublic.value
+      })
+      await handleResponse(response)
+    } catch (e) {
+      setErrorMessage(e.message)
+    }
   }
 
-  if (password.value !== confirmPassword.value) { setErrorMessage('Passwords do not match'); return }
-  try {
-    const url = `${BASE_API_LINK}/users/register`
-    const response = await postToAPI(url, { username: username.value, password: password.value, is_public: isPublic.value })
-    if (response.error){ setErrorMessage(response.error) }
-    else {
-      setSuccessMessage('Registration successful')
-      const userStore = useUserStore()
-      userStore.login(username.value)
-      await router.push('/dashboard')
+  async function handleResponse(response){
+    if (response.error){
+      setErrorMessage(response.error)
+    } else {
+      const responseMessage = response.message
+      const loggedInUsername = response.username
+      const loggedInId = response.id
+      await setSuccessMessage(responseMessage)
+      userStore.login(loggedInUsername, loggedInId)
+      router.push('/dashboard')
     }
-  } catch (e) { setErrorMessage(e.message) }
+  }
+
 }
 </script>
 
@@ -129,6 +153,7 @@ async function handleSubmit(){
 
 .card {background-color:#1a1a1a; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.6); max-width:400px; padding:2rem 2.5rem; text-align:center; width:100%;}
 .error-message {background-color:#2a0000; border-left:4px solid #b33; border-radius:6px; color:#f7dada; font-size:0.9rem; margin-bottom:1rem; padding:0.75rem 1rem; text-align:left;}
+.success-message {background-color:#002a00; border-left:4px solid #3b3; border-radius:6px; color:#daf7da; font-size:0.9rem; margin-bottom:1rem; padding:0.75rem 1rem; text-align:left;}
 .form {display:flex; flex-direction:column; gap:1rem;}
 .form button[type="submit"] {background-color:#3a3a3a; border:none; border-radius:6px; color:#f1f1f1; cursor:pointer; font-weight:700; padding:0.75rem; transition:background-color .2s ease;}
 .form button[type="submit"]:hover {background-color:#555;}
