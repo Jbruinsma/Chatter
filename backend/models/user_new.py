@@ -29,3 +29,16 @@ class UserNew:
 
     def check_password(self, attempt) -> bool:
         return bcrypt.checkpw(attempt.encode('utf-8'), self.password)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "profile_picture": self.profile_picture,
+            "username": self.username,
+            "followers": list(self.followers),
+            "following": list(self.following),
+            "blocked_users": list(self.blocked_users),
+            "follow_requests": list(self.follow_requests),
+            "chat_ids": list(self.chat_ids),
+            "public_status": self.public_status
+        }
