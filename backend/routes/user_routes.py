@@ -1,5 +1,7 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Query
 import uuid
+
+from typing import Dict, Any
 
 from backend.instances import UUID_INDEX, USER_MANAGER
 from backend.models.user_new import UserNew
@@ -65,15 +67,15 @@ async def register(request: Request):
         "username": username,
     }
 
-@router.get('/{username}')
-async def get_user(username: str):
-    error_message = "User not found."
-    if username not in UUID_INDEX:
-        return {"error": error_message}
-
-    user_uuid = UUID_INDEX[username]
-    user_status, user_obj = find_user(user_uuid)
-    if not user_status or user_obj is None:
-        return {"error": error_message}
-
-    return user_obj.to_dict()
+@router.get('/{user_uuid}')
+async def get_user(user_uuid: str, username: str | None = Query(None)) -> Dict[str, Any]:
+    error: Dict[str, str] = {"error": "User not found."}
+    try:
+        if username:
+            user_uuid = UUID_INDEX[username]
+        user_status, user_obj = find_user(user_uuid)
+        if not user_status or user_obj is None:
+            return error
+        return user_obj.to_dict()
+    except KeyError:
+        return error
