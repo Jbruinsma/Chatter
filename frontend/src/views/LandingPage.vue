@@ -66,6 +66,8 @@ const successMessage = ref('')
 const chatStore = useChatStore()
 const userStore = useUserStore()
 
+const busy = ref(false)
+
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 onMounted(() => {
@@ -102,50 +104,53 @@ function switchPublicStatus(event){
   }
 }
 
-async function handleSubmit(){
-  errorMessage.value = ''
-  successMessage.value = ''
-
-  if (!username.value.trim() || !password.value) { setErrorMessage('Please fill in all fields'); return }
-
-  if (isLogin.value) {
-    try {
-      const url = `${BASE_API_LINK}/users/login`
-      const response = await postToAPI(url, { username: username.value, password: password.value })
-      await handleResponse(response)
-    } catch (e) { setErrorMessage(e.message) }
-  } else {
-    if (password.value !== confirmPassword.value) {
-      setErrorMessage('Passwords do not match');
-      return
-    }
-    try {
-      const url = `${BASE_API_LINK}/users/register`
-      const response = await postToAPI(url, {
-        username: username.value,
-        password: password.value,
-        is_public: isPublic.value
-      })
-      await handleResponse(response)
-    } catch (e) {
-      setErrorMessage(e.message)
-    }
+async function handleSubmit() {
+  if (busy.value) return;
+  
+  if (!username.value.trim() || !password.value) {
+    setErrorMessage('Please fill in all fields');
+    return;
+  }
+  if (!isLogin.value && password.value !== confirmPassword.value) {
+    setErrorMessage('Passwords do not match');
+    return;
   }
 
-  async function handleResponse(response){
-    if (response.error){
-      setErrorMessage(response.error)
-    } else {
-      const responseMessage = response.message
-      const loggedInUsername = response.username
-      const loggedInId = response.id
-      await setSuccessMessage(responseMessage)
-      userStore.login(loggedInUsername, loggedInId)
-      router.push('/dashboard')
-    }
-  }
+  busy.value = true;
+  errorMessage.value = '';
+  successMessage.value = '';
 
+  try {
+    const url = isLogin.value
+      ? `${BASE_API_LINK}/users/login`
+      : `${BASE_API_LINK}/users/register`;
+
+    const payload = isLogin.value
+      ? { username: username.value, password: password.value }
+      : { username: username.value, password: password.value, is_public: isPublic.value };
+
+    const response = await postToAPI(url, payload);
+    await handleResponse(response);
+  } catch (e) {
+    setErrorMessage(e instanceof Error ? e.message : String(e));
+  } finally {
+    busy.value = false;
+  }
 }
+
+async function handleResponse(response){
+  if (response.error){
+    setErrorMessage(response.error)
+  } else {
+    const responseMessage = response.message
+    const loggedInUsername = response.username
+    const loggedInId = response.id
+    await setSuccessMessage(responseMessage)
+    userStore.login(loggedInUsername, loggedInId)
+    router.push('/dashboard')
+  }
+}
+
 </script>
 
 <style scoped>
@@ -153,7 +158,7 @@ async function handleSubmit(){
 
 .card {background-color:#1a1a1a; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.6); max-width:400px; padding:2rem 2.5rem; text-align:center; width:100%;}
 .error-message {background-color:#2a0000; border-left:4px solid #b33; border-radius:6px; color:#f7dada; font-size:0.9rem; margin-bottom:1rem; padding:0.75rem 1rem; text-align:left;}
-.success-message {background-color:#002a00; border-left:4px solid #3b3; border-radius:6px; color:#daf7da; font-size:0.9rem; margin-bottom:1rem; padding:0.75rem 1rem; text-align:left;}
+.success-message {background-color:#002a00; border-left:4px solid #3b3; border-radius:6px; color:#daf7da; font-size:0.9rem; margin-bottom:1rem; padding:0.75rem 1rem; text-align:center;}
 .form {display:flex; flex-direction:column; gap:1rem;}
 .form button[type="submit"] {background-color:#3a3a3a; border:none; border-radius:6px; color:#f1f1f1; cursor:pointer; font-weight:700; padding:0.75rem; transition:background-color .2s ease;}
 .form button[type="submit"]:hover {background-color:#555;}
