@@ -19,4 +19,4 @@ class UserDatabase(AVLTree):
         self.change_key(old_username, new_username)
 
     def save(self) -> None:
-        self.save()
+        super().save()

@@ -14,7 +14,7 @@ class ChatDatabase(AVLTree):
     def search_for_chat(self, chat_id: str) -> Chat | None:
         return self.search(chat_id)
 
-    def add_chat(self, owner: User, participants: List[str], chat_name: str, participant_permissions: Dict[str, Dict[str | bool]]) -> tuple[str, Chat]:
+    def add_chat(self, owner: User, participants: List[str], chat_name: str, participant_permissions: Dict[str, Dict[str, str | bool]]) -> tuple[str, Chat]:
         chat_id = str(uuid.uuid4())
         if self.search(chat_id) is not None:
             return self.add_chat(owner, participants, chat_name, participant_permissions)
@@ -26,4 +26,4 @@ class ChatDatabase(AVLTree):
         self.delete(chat_id)
 
     def save_chat_database(self):
-        self.save()
+        super().save()
