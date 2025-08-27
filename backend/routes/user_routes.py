@@ -4,7 +4,7 @@ import uuid
 from typing import Dict, Any
 
 from backend.instances import UUID_INDEX, USER_MANAGER
-from backend.models.user_new import User
+from backend.models.user import User
 from backend.utils.user_utils import find_user
 
 router = APIRouter()
@@ -67,11 +67,13 @@ async def register(request: Request):
         "username": username,
     }
 
-@router.get('/{user_uuid}')
-async def get_user(user_uuid: str, username: str | None = Query(None)) -> Dict[str, Any]:
+@router.get('/')
+async def get_user(user_uuid: str | None = Query(None), username: str | None = Query(None)) -> Dict[str, Any]:
     error: Dict[str, str] = {"error": "User not found."}
     try:
-        if username:
+        if user_uuid is None and username is None:
+            return {"error": "Must provide either user_uuid or username."}
+        if username is not None:
             user_uuid = UUID_INDEX[username]
         user_status, user_obj = find_user(user_uuid)
         if not user_status or user_obj is None:
