@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.instances import USER_MANAGER, CHAT_MANAGER, UUID_INDEX
-from backend.routes import user_routes, chat_routes
+from backend.routes import user_routes, chat_routes, websocket
 import uvicorn
 import os
 from contextlib import asynccontextmanager
@@ -43,7 +43,7 @@ app.add_middleware(
 
 app.include_router(user_routes.router, prefix="/users", tags=["Users"])
 app.include_router(chat_routes.router, prefix="/chats", tags=["Chats"])
-# app.include_router(web_socket.router, prefix="/ws", tags=["WebSocket"])
+app.include_router(websocket.router, prefix="/ws", tags=["WebSocket"])
 
 if __name__ == "__main__":
     uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)

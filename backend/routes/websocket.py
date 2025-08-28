@@ -1,7 +1,9 @@
-from typing import Annotated
+from typing import Annotated, Dict
 
 from fastapi import APIRouter
-from starlette.websockets import WebSocket
+from starlette.websockets import WebSocket, WebSocketDisconnect
+
+from backend.utils.user_utils import find_user
 
 router = APIRouter()
 
@@ -35,13 +37,13 @@ async def send_websocket_error(websocket: WebSocket, operation: str, code: str, 
     await websocket.send_json(payload)
 
 async def send_websocket_acknowledgement(websocket: WebSocket, operation: str, extra: dict | None = None) -> None:
-    payload = {"type": "ack", "operation": operation}
+    payload = {"type": "acknowledgement", "operation": operation}
     if extra:
         payload["data"] = extra
     await websocket.send_json(payload)
 
-@router.websocket_('/{user_uuid}')
-async def websocket_endpoint(websocket: Websocket, user_uuid: UserUUID):
+@router.websocket('/{user_uuid}')
+async def websocket_endpoint(websocket: WebSocket, user_uuid: UserUUID):
     user_status, user_obj = find_user(user_uuid)
 
     if not user_status or user_obj is None:
@@ -72,6 +74,10 @@ async def websocket_endpoint(websocket: Websocket, user_uuid: UserUUID):
 
             operation = (incoming_json or {}).get("operation")
             data = (incoming_json or {}).get("data") or {}
+
+            if operation == "ping":
+                print(f"Received ping from {user_uuid}")
+                await send_websocket_acknowledgement(websocket, "pong")
 
     finally:
         await remove_user_from_active_connections(user_uuid)
