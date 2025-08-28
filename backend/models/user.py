@@ -1,4 +1,5 @@
 from typing import Dict, List
+from enum import Enum
 import bcrypt
 
 
@@ -16,7 +17,12 @@ class User:
         self.blocked_users: set = set()
         self.follow_requests: set = set()
 
-        self.chat_ids: set = set()
+        self.message_preferences: Enum = MessagePreference.ANYONE if self.is_public else MessagePreference.FRIENDS
+
+        self.chat_ids: Dict[str, set] = {
+            "main": set(),
+            "requests": set()
+        }
         self.public_status: bool = is_public
 
     def __str__(self) -> str:
@@ -35,10 +41,16 @@ class User:
             "id": self.id,
             "profile_picture": self.profile_picture,
             "username": self.username,
+            "message_preferences": self.message_preferences.value,
             "followers": list(self.followers),
             "following": list(self.following),
             "blocked_users": list(self.blocked_users),
             "follow_requests": list(self.follow_requests),
-            "chat_ids": list(self.chat_ids),
+            "chat_ids": list(self.chat_ids.get("main", [])),
+            "chat_requests": list(self.chat_ids.get("requests", [])),
             "public_status": self.public_status
         }
+
+class MessagePreference(Enum):
+    ANYONE = "ANYONE"
+    FRIENDS = "FRIENDS"
