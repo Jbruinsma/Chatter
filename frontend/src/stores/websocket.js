@@ -22,13 +22,13 @@ export const useChatStore = defineStore('chat', () => {
   const activeChatIndex = ref(-1)
   const showChatInfo = ref(false)
 
-  function connect(username) {
-    if (!username) return
+  function connect(user_uuid) {
+    if (!user_uuid) return
     if (webSocket.value && isOpen.value) return
 
-    user.value = username
-    const wsUrl = getWebSocketUrl(`/ws/${username}`)
-    webSocket.value = new WebSocket(wsUrl)
+    user.value = user_uuid
+    const webSocketUrl = getWebSocketUrl(`/ws/${user_uuid}`)
+    webSocket.value = new WebSocket(webSocketUrl)
 
     webSocket.value.onopen = function () {
       isOpen.value = true
@@ -235,7 +235,7 @@ export const useChatStore = defineStore('chat', () => {
   async function fetchDashboardChatPreviews() {
     if (user.value === null || user.value === undefined) return
     try {
-      const url = `${BASE_API_LINK}/chats/user/${user.value}/chats`
+      const url = `${BASE_API_LINK}/chats/${user.value}`
       const response = await fetchAPI(url)
       dashboardChats.value = [...(response.chats ?? [])].sort((a, b) => {
         const ta = Date.parse(a.last_message_time ?? a.time_created ?? 0) || 0

@@ -36,13 +36,13 @@
         </button>
       </div>
 
-      <input v-if="chatStore.dashboardChats.length > 0" type="text" placeholder="Search chats..." class="search-bar" />
+      <input v-if="websocket.dashboardChats.length > 0" type="text" placeholder="Search chats..." class="search-bar" />
 
       <div class="chat-list" ref="chatListRef">
         <div
-          v-for="chat in chatStore.dashboardChats"
+          v-for="chat in websocket.dashboardChats"
           :key="chat.chat_id"
-          :class="['chat-item', { active: chat.chat_id === chatStore.activeChatID }]"
+          :class="['chat-item', { active: chat.chat_id === websocket.activeChatID }]"
           @click="selectChat(chat.chat_id)"
         >
           <div class="chat-name">{{ chat.chat_name }}</div>
@@ -54,21 +54,21 @@
     </aside>
 
     <ChatArea
-      v-if="chatStore.activeChatID"
-      :chat-id="chatStore.activeChatID"
+      v-if="websocket.activeChatID"
+      :chat-id="websocket.activeChatID"
       :chat-name="activeChatName"
       :current-user="currentUser"
       @show-chat-info="showChatInfoModal"
     />
 
     <main class="chat-area placeholder" v-else>
-      <p v-if="chatStore.dashboardChats.length > 0">Select a chat to get started</p>
+      <p v-if="websocket.dashboardChats.length > 0">Select a chat to get started</p>
       <p v-else>Create a chat to get started</p>
     </main>
 
     <ChatInfo
-      v-if="chatStore.showChatInfo"
-      :chat="chatStore.dashboardChats.find(c => c.chat_id === chatStore.activeChatID)"
+      v-if="websocket.showChatInfo"
+      :chat="websocket.dashboardChats.find(c => c.chat_id === websocket.activeChatID)"
       @close="closeChatInfoModal"
       @leave-chat="onLeaveChat"
     />
@@ -105,9 +105,9 @@ import { useChatStore } from '@/stores/websocket.js'
 import FollowRequestsModal from "@/components/FollowRequestsModal.vue";
 
 const router = useRouter()
-const chatStore = ref(useChatStore())
+const websocket = ref(useChatStore())
 const userStore = useUserStore()
-const currentUser = ref(userStore.username)
+const currentUser = ref(userStore.id)
 
 const activeChatName = ref(null)
 
@@ -126,25 +126,25 @@ function scrollChatsToTop(opts = {}) {
   }
 }
 watch(
-  () => [chatStore.value.dashboardChats?.length, chatStore.value.dashboardChats?.[0]?.chat_id],
+  () => [websocket.value.dashboardChats?.length, websocket.value.dashboardChats?.[0]?.chat_id],
   async () => { await nextTick(); scrollChatsToTop({ behavior: 'auto', force: true }) },
   { immediate: true }
 )
 
 onMounted(async () => {
   await verifyLogin()
-  chatStore.value.connect(currentUser.value)
-  await chatStore.value.fetchDashboardChatPreviews()
+  websocket.value.connect(currentUser.value)
+  await websocket.value.fetchDashboardChatPreviews()
   await nextTick()
   scrollChatsToTop({ behavior: 'auto', force: true })
 })
 
 async function selectChat(id) {
-  if (chatStore.value.activeChatID === id) {
-    chatStore.value.exitChat(id)
+  if (websocket.value.activeChatID === id) {
+    websocket.value.exitChat(id)
   } else {
-    const currentChatIndex = chatStore.value.switchChat(chatStore.value.activeChatID, id)
-    const currentChat = chatStore.value.dashboardChats[currentChatIndex]
+    const currentChatIndex = websocket.value.switchChat(websocket.value.activeChatID, id)
+    const currentChat = websocket.value.dashboardChats[currentChatIndex]
     activeChatName.value = currentChat?.chat_name
   }
 }
@@ -169,9 +169,9 @@ function goToSettings() { router.push('/settings') }
 function truncateMessage(msg) { return msg && msg.length > 25 ? msg.slice(0, 25) + '...' : msg }
 
 function showChatInfoModal(chatId) {
-  const id = chatId ?? chatStore.value.activeChatID; if (!id) return
-  const exists = chatStore.value.dashboardChats.some(c => c.chat_id === id); if (!exists) return
-  chatStore.value.toggleShowChatInfo()
+  const id = chatId ?? websocket.value.activeChatID; if (!id) return
+  const exists = websocket.value.dashboardChats.some(c => c.chat_id === id); if (!exists) return
+  websocket.value.toggleShowChatInfo()
 }
 
 function handleEditorCancel() {
@@ -184,19 +184,19 @@ async function handleEditorSubmit(payload) {
     const chatName = data.chatName
     const participantList = data.participants
     const participantPermissionList = data.permissions
-    chatStore.value.createChat(chatName, participantList, participantPermissionList)
+    websocket.value.createChat(chatName, participantList, participantPermissionList)
   }
   editorOpen.value = false
 }
 
 function closeChatInfoModal(){
-  chatStore.value.toggleShowChatInfo()
-  chatStore.value.sendReadReceipt()
+  websocket.value.toggleShowChatInfo()
+  websocket.value.sendReadReceipt()
 }
 
 function onLeaveChat(chatId) {
-  chatStore.value.toggleShowChatInfo()
-  chatStore.value.leaveChat(chatId)
+  websocket.value.toggleShowChatInfo()
+  websocket.value.leaveChat(chatId)
 }
 
 </script>
