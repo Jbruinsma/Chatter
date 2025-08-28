@@ -40,6 +40,10 @@ class AVLTree:
         self.root = self._insert(self.root, new_key, value)
         return None
 
+    def iterate_all(self):
+        # TODO: implement iterating over all nodes
+        pass
+
     def _insert(self, node, key, value):
         if node is None:
             return AVLNode(key, value)

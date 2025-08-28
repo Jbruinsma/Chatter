@@ -143,8 +143,7 @@ class Chat:
             other_uuid = self._other_participant_uuid(viewer_uuid)
             if other_uuid:
                 other_info = participants_by_id.get(other_uuid) or self.format_participant_dict(other_uuid)
-                data["otherParticipant"] = other_info       # { id, username, avatar, role }
-                # Helpful defaults for UI (optional; client can ignore)
+                data["otherParticipant"] = other_info 
                 data["title"] = other_info.get("username", "")
                 data["avatar"] = other_info.get("avatar", "")
 

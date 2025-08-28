@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Checking database files...")
+
     if not os.path.exists("user_manager.pkl"):
         print("Creating user_manager.pkl...")
         USER_MANAGER.save()
@@ -19,8 +20,15 @@ async def lifespan(app: FastAPI):
     if not os.path.exists(UUID_INDEX.path):
         UUID_INDEX.save()
     UUID_INDEX.load()
-    print("Database initialization complete.")
 
+    if not os.path.exists("direct_index.pkl"):
+        print("Building direct_index.pkl from existing chats...")
+        def iter_chats():
+            for chat in CHAT_MANAGER.iterate_all():
+                yield chat
+        DIRECT_CHAT_INDEX_MANAGER.rebuild_from_chats(iter_chats())
+
+    print("Database initialization complete.")
     yield
 
     print("Saving all AVL trees before shutdown...")
