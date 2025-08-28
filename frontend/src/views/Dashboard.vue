@@ -36,9 +36,53 @@
         </button>
       </div>
 
+      <!-- Messages / Requests Toggle -->
+      <div class="mr-toggle" role="tablist" aria-label="Messages and Requests">
+        <button
+          class="mr-tab"
+          :class="{ active: activeTab === 'messages' }"
+          role="tab"
+          :aria-selected="activeTab === 'messages'"
+          @click="activeTab = 'messages'"
+        >
+          Messages
+        </button>
+        <button
+          class="mr-tab"
+          :class="{ active: activeTab === 'requests' }"
+          role="tab"
+          :aria-selected="activeTab === 'requests'"
+          @click="activeTab = 'requests'"
+        >
+          {{ requestsCount > 0 ? 'Requests (' + requestsCount + ')' : 'Requests' }}
+        </button>
+      </div>
+
+      <!-- Requests list (shown when Requests tab active) -->
+      <div class="chat-list" v-show="activeTab === 'requests'">
+        <div v-if="requestsCount === 0" class="empty-state">No chat requests</div>
+        <div
+          v-else
+          v-for="req in chatRequestsList"
+          :key="req.chat_id || req.id"
+          class="chat-item request"
+          @click="selectChat(req.chat_id || req.id)"
+        >
+          <div class="chat-name">{{ req.chat_name || req.name || 'Untitled' }}</div>
+        </div>
+      </div>
+
+
+
       <input v-if="websocket.dashboardChats.length > 0" type="text" placeholder="Search chats..." class="search-bar" />
 
-      <div class="chat-list" ref="chatListRef">
+      <div
+        v-if="activeTab === 'messages' && (!websocket.dashboardChats || websocket.dashboardChats.length === 0)"
+        class="empty-state"
+      >
+        No messages
+      </div>
+      <div class="chat-list" ref="chatListRef" v-show="activeTab === 'messages'">
         <div
           v-for="chat in websocket.dashboardChats"
           :key="chat.chat_id"
@@ -92,9 +136,8 @@
   </div>
 </template>
 
-
 <script setup>
-import { ref, watch, nextTick, onMounted } from 'vue'
+import { ref, watch, nextTick, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/userStore.js'
 import { verifyLogin } from '@/utils/verification.js'
@@ -116,6 +159,23 @@ const editorKey = ref(0)
 
 const showFollowRequests = ref(false)
 
+
+
+const activeTab = ref('messages')
+
+const chatRequestsList = computed(() => {
+  const cr = websocket.value?.chatRequests
+  if (!cr) return []
+  if (Array.isArray(cr)) return cr
+  if (typeof cr.toArray === 'function') return cr.toArray()
+  if (typeof cr.values === 'function') return Array.from(cr.values())
+  try { return [...cr] } catch { return [] }
+})
+
+const requestsCount = computed(() => chatRequestsList.value.length)
+
+const requestSum = ref(0)
+
 const chatListRef = ref(null)
 function getChatListEl() { return chatListRef.value ?? document.querySelector('.chat-list') }
 function scrollChatsToTop(opts = {}) {
@@ -135,6 +195,7 @@ onMounted(async () => {
   await verifyLogin()
   websocket.value.connect(currentUser.value)
   await websocket.value.fetchDashboardChatPreviews()
+  requestSum.value = websocket.value.chatRequests.length
   await nextTick()
   scrollChatsToTop({ behavior: 'auto', force: true })
 })
@@ -232,4 +293,13 @@ function onLeaveChat(chatId) {
 .top-bar { align-items:center; display:flex; justify-content:space-between; margin-bottom:1rem; }
 .top-bar button { background:none; border:1px solid #555; border-radius:4px; color:#f1f1f1; cursor:pointer; padding:0.25rem 0.5rem; }
 .top-bar h2 { color:#f1f1f1; font-size:1.2rem; }
+
+.mr-toggle{align-items:center;display:flex;gap:1.25rem;justify-content:center;margin:.5rem 0 0;padding:.25rem 0;width:100%;}
+.mr-tab{background:transparent;border:none;border-radius:0;color:#fff;cursor:pointer;font-size:.95rem;font-weight:500;margin:0;outline:none;padding:.25rem 0;}
+.mr-tab.active{font-weight:700;}
+.empty-state{align-items:center;display:flex;font-size:.9rem;justify-content:center;margin:.75rem 0;text-align:center;width:100%;color:#888;}
+.chat-item.request{opacity:.95;}
+.mr-tab:focus-visible{outline:2px solid currentColor;outline-offset:2px;}
+.mr-tab:not(.active){opacity:.8;}
+.mr-tab:hover{opacity:1;}
 </style>

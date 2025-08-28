@@ -16,6 +16,7 @@ export const useChatStore = defineStore('chat', () => {
   const user = ref(null)
 
   const dashboardChats = ref([])
+  const chatRequests = ref([])
   const activeChatMessageStore = ref({})
 
   const activeChatID = ref(null)
@@ -237,7 +238,15 @@ export const useChatStore = defineStore('chat', () => {
     try {
       const url = `${BASE_API_LINK}/chats/${user.value}`
       const response = await fetchAPI(url)
-      dashboardChats.value = [...(response.chats ?? [])].sort((a, b) => {
+      const mainChatSummaries = response.chats.main || []
+      const chatRequestSummaries = response.chats.requests || []
+      dashboardChats.value = [...(mainChatSummaries ?? [])].sort((a, b) => {
+        const ta = Date.parse(a.last_message_time ?? a.time_created ?? 0) || 0
+        const tb = Date.parse(b.last_message_time ?? b.time_created ?? 0) || 0
+        if (tb !== ta) return tb - ta
+        return (a.chat_name || '').localeCompare(b.chat_name || '')
+      })
+      chatRequests.value = [...(chatRequestSummaries ?? [])].sort((a, b) => {
         const ta = Date.parse(a.last_message_time ?? a.time_created ?? 0) || 0
         const tb = Date.parse(b.last_message_time ?? b.time_created ?? 0) || 0
         if (tb !== ta) return tb - ta
@@ -319,6 +328,7 @@ export const useChatStore = defineStore('chat', () => {
     isOpen,
     user,
     dashboardChats,
+    chatRequests,
     activeChatMessageStore,
     activeChatID,
     activeChatIndex,
