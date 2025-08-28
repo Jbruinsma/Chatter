@@ -7,8 +7,8 @@ class LinkedList:
         self.head = None
         self.tail = None
 
-    def append(self, value):
-        new_node = ListNode(value)
+    def append(self, message_dict):
+        new_node = ListNode(**message_dict)
         if self.is_empty():
             self.head = new_node
             self.tail = new_node
@@ -17,9 +17,9 @@ class LinkedList:
             self.tail.next = new_node
             self.tail = new_node
 
-    def get_all_chats(self):
-        chats = []
-        current = self.head
+    def all_chats_to_list(self):
+        chats: List[Dict[str, str]] = []
+        current: ListNode = self.head
         while current:
             chats.append(current.value)
             current = current.next

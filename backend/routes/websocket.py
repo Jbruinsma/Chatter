@@ -30,6 +30,24 @@ def ensure_chat_bucket(chat_id: ChatId) -> None:
     if chat_id not in active_chat_connections:
         active_chat_connections[chat_id] = {}
 
+async def handle_chat_creation():
+    pass
+
+async def handle_new_message():
+    pass
+
+async def handle_chat_leave():
+    pass
+
+async def handle_read_receipt():
+    pass
+
+async def handle_typing_receipt():
+    pass
+
+async def handle_chat_update():
+    pass
+
 async def send_websocket_error(websocket: WebSocket, operation: str, code: str, message: str, extra: dict | None = None) -> None:
     payload = {"type": "error", "operation": operation, "code": code, "message": message}
     if extra:
@@ -78,6 +96,27 @@ async def websocket_endpoint(websocket: WebSocket, user_uuid: UserUUID):
             if operation == "ping":
                 print(f"Received ping from {user_uuid}")
                 await send_websocket_acknowledgement(websocket, "pong")
+
+            elif operation == "create_chat":
+                pass
+
+            elif operation == "send_message":
+                pass
+
+            elif operation == "leave_chat":
+                pass
+
+            elif operation == "read_receipt":
+                pass
+
+            elif operation == "typing_receipt":
+                pass
+
+            elif operation == "update_chat":
+                pass
+
+            else:
+                await send_websocket_error(websocket, operation or "unknown", "unsupported_operation", "Unsupported operation")
 
     finally:
         await remove_user_from_active_connections(user_uuid)

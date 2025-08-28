@@ -1,21 +1,44 @@
+import copy
 import uuid
 from datetime import datetime, timezone
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Optional, Literal
 
 from backend.models.linked_list.linked_list import LinkedList
 from backend.utils.user_utils import find_user
 
 
 class Chat:
+    """
+    Chat model supporting explicit chat types:
+      - "direct": exactly 2 participants (1-to-1). UI can treat this as a DM.
+      - "group": 2+ participants.
 
-    def __init__(self, chat_name: str, chat_cover: str, owner_id: str, participant_ids: List[str], participant_permissions: Dict[str, Dict[str, bool | str]]):
+    Notes:
+    - We keep an explicit `chat_type` instead of inferring from participant count.
+    - For direct chats, invariants are enforced (exactly 2 participants).
+    - `to_dict(viewer_uuid=...)` now includes:
+        * "type": "direct" | "group"
+        * "isDirect": bool
+        * "otherParticipant" (when direct + viewer provided)
+        * "title" and "avatar" convenient defaults for DMs
+    """
 
+    def __init__(
+        self,
+        chat_name: str,
+        chat_cover: str,
+        owner_id: str,
+        participant_ids: List[str],
+        participant_permissions: Dict[str, Dict[str, bool | str]],
+        chat_type: Literal["direct", "group"] = "group",
+    ):
         participant_ids = list(set(participant_ids))
         participant_permissions = copy.deepcopy(participant_permissions)
-        participant_permissions[owner_id]["can_edit"] = True
 
         if owner_id not in participant_ids:
             raise ValueError("Owner must be a participant.")
+        participant_permissions.setdefault(owner_id, {})
+        participant_permissions[owner_id]["can_edit"] = True
 
         if len(participant_ids) < 2:
             raise ValueError("Chat must have at least 2 participants.")
@@ -33,18 +56,36 @@ class Chat:
         self.messages: LinkedList = LinkedList()
         self.unread_messages_by: Set[str] = set()
 
+        self.chat_type: Literal["direct", "group"] = chat_type
+        if self.chat_type == "direct":
+            if len(self.participants) != 2:
+                raise ValueError("Direct chats must have exactly 2 participants.")
+            for uid in self.participants:
+                self.participant_permissions[uid]["can_edit"] = True
+
+    @property
+    def is_direct(self) -> bool:
+        return self.chat_type == "direct"
+
     def get_participant_role(self, user_uuid: str) -> str:
         if user_uuid == self.owner_id:
             return "Owner"
         try:
-            can_edit = self.participant_permissions[user_uuid]["can_edit"]
-            if can_edit:
+            if self.participant_permissions[user_uuid].get("can_edit", False):
                 return "Editor"
         except KeyError:
             pass
         return "Participant"
 
-    def format_participant_dict(self,user_uuid):
+    def _other_participant_uuid(self, viewer_uuid: Optional[str]) -> Optional[str]:
+        if not viewer_uuid or not self.is_direct:
+            return None
+        for uid in self.participants:
+            if uid != viewer_uuid:
+                return uid
+        return None
+
+    def format_participant_dict(self, user_uuid: str) -> Dict[str, str]:
         user_status, user_obj = find_user(user_uuid)
         if user_status and user_obj is not None:
             user_id = user_obj.user_id
@@ -60,40 +101,69 @@ class Chat:
             "id": user_id,
             "username": username,
             "avatar": avatar,
-            "role": role
+            "role": role,
         }
 
-    def to_dict(self, viewer_uuid: str = None):
-
+    def to_dict(self, viewer_uuid: Optional[str] = None) -> Dict[str, object]:
         if len(self.participants) == 0 or self.owner_id not in self.participants:
             return {}
 
-        participants = {}
-        participants_list = list(self.participants)
-        for user_uuid in participants_list:
-            participant_info = self.format_participant_dict(user_uuid)
-            participants[user_uuid] = participant_info
+        participants_by_id: Dict[str, Dict[str, str]] = {}
+        for user_uuid in list(self.participants):
+            participants_by_id[user_uuid] = self.format_participant_dict(user_uuid)
 
-        capabilities = {}
+        capabilities: Dict[str, object] = {}
         if viewer_uuid is not None:
             try:
                 is_owner = viewer_uuid == self.owner_id
-                can_edit = is_owner or self.participant_permissions[viewer_uuid]["can_edit"]
+                can_edit = is_owner or bool(self.participant_permissions[viewer_uuid].get("can_edit", False))
                 capabilities["canEdit"] = can_edit
-                capabilities["role"] = "Owner" if is_owner else "Editor" if can_edit else "Participant"
+                capabilities["role"] = "Owner" if is_owner else ("Editor" if can_edit else "Participant")
             except KeyError:
                 capabilities["canEdit"] = False
                 capabilities["role"] = "Participant"
 
-        return {
+        data: Dict[str, object] = {
             "chatId": self.chat_id,
             "chatCover": self.chat_cover,
             "chatName": self.chat_name,
             "ownerId": self.owner_id,
-            "participantsById": participants,
+            "participantsById": participants_by_id,
             "participantIds": list(self.participants),
+            "participantCount": len(self.participants),
             "capabilities": capabilities,
             "createdAt": self.created_at.isoformat(timespec="seconds").replace("+00:00", "Z"),
-            "hasUnreadMessages": True if viewer_uuid is not None and viewer_uuid in self.unread_messages_by else False,
+            "hasUnreadMessages": bool(viewer_uuid is not None and viewer_uuid in self.unread_messages_by),
             "lastMessage": self.messages.tail.value.get("message") if not self.messages.is_empty() else "",
+            "type": self.chat_type,
+            "isDirect": self.is_direct,
         }
+
+        if self.is_direct and viewer_uuid:
+            other_uuid = self._other_participant_uuid(viewer_uuid)
+            if other_uuid:
+                other_info = participants_by_id.get(other_uuid) or self.format_participant_dict(other_uuid)
+                data["otherParticipant"] = other_info       # { id, username, avatar, role }
+                # Helpful defaults for UI (optional; client can ignore)
+                data["title"] = other_info.get("username", "")
+                data["avatar"] = other_info.get("avatar", "")
+
+        return data
+
+    def mark_unread_for(self, user_uuid: str) -> None:
+        if user_uuid in self.participants:
+            self.unread_messages_by.add(user_uuid)
+
+    def mark_read_for(self, user_uuid: str) -> None:
+        self.unread_messages_by.discard(user_uuid)
+
+    def can_user_edit(self, user_uuid: str) -> bool:
+        if user_uuid == self.owner_id:
+            return True
+        return bool(self.participant_permissions.get(user_uuid, {}).get("can_edit", False))
+
+    def rename(self, user_uuid: str, new_name: str) -> None:
+        """Allow owners/editors to rename (for direct chats, many UIs ignore custom names)."""
+        if not self.can_user_edit(user_uuid):
+            raise PermissionError("User lacks permission to rename this chat.")
+        self.chat_name = new_name
