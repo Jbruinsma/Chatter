@@ -6,6 +6,8 @@ from typing import List, Dict, Set, Optional, Literal
 from backend.models.linked_list.linked_list import LinkedList
 from backend.utils.user_utils import find_user
 
+from backend.utils.formatting import format_message_dict
+
 
 class Chat:
     """
@@ -66,15 +68,6 @@ class Chat:
             for uid in self.participants:
                 self.participant_permissions[uid]["can_edit"] = True
 
-        for uid in participant_ids:
-            user_status, potential_participant_obj = find_user(uid)
-            if not user_status or potential_participant_obj is None: continue
-            participant_message_preference = potential_participant_obj.message_preferences
-            is_friends = owner_id in potential_participant_obj.following and uid in potential_participant_obj.followers
-            if paarticipant_message_preference == "FRIENDS" and not is_friends:
-                self.invited_users.add(uid)
-                self.participants.remove(uid)
-
     @property
     def is_direct(self) -> bool:
         return self.chat_type == "direct"
@@ -96,6 +89,20 @@ class Chat:
             if uid != viewer_uuid:
                 return uid
         return None
+
+    def add_message(self, new_message_info: Dict[str, str]):
+        self.messages.append(**new_message_info)
+
+    def add_system_message(self, chat_id: str, system_message: str):
+        message_dict = format_message_dict(
+            chat_id= chat_id,
+            chat_type="system",
+            message_id= str(uuid.uuid4()),
+            sender_id= "system",
+            message= system_message,
+            time_sent= datetime.now(timezone.utc)
+        )
+        self.add_message(message_dict)
 
     def format_participant_dict(self, user_uuid: str) -> Dict[str, str]:
         user_status, user_obj = find_user(user_uuid)

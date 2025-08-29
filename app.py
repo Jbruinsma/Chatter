@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.instances import USER_MANAGER, CHAT_MANAGER, UUID_INDEX
+from backend.instances import USER_MANAGER, CHAT_MANAGER, UUID_INDEX, DIRECT_CHAT_INDEX_MANAGER
 from backend.routes import user_routes, chat_routes, websocket
 import uvicorn
 import os

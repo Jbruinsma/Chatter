@@ -5,3 +5,9 @@ def find_user(username):
         return False, None
     user = user_node.value
     return True, user
+
+def user_uuid_to_username(user_uuid):
+    user_status, user_obj = find_user(user_uuid)
+    if not user_status:
+        return None
+    return user_obj.username

@@ -3,7 +3,9 @@ from typing import Annotated, Dict
 from fastapi import APIRouter
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from backend.utils.user_utils import find_user
+from backend.utils.user_utils import find_user, user_uuid_to_username
+from backend.utils.chat_utils import create_chat, find_direct_chat_with_user
+from backend.utils.database_utils import save_all_databases
 
 router = APIRouter()
 
@@ -15,6 +17,9 @@ active_chat_connections: Dict[ChatId, Dict[UserUUID, WebSocket]] = {}
 
 async def add_user_to_active_connections(user_uuid: UserUUID, websocket: WebSocket) -> None:
     active_user_connections[user_uuid] = websocket
+
+async def remove_user_from_active_connections(user_uuid: str):
+    active_user_connections.pop(user_uuid, None)
 
 async def attach_user_to_chat(chat_id: ChatId, user_uuid: UserUUID) -> None:
     user_websocket: WebSocket | None = get_user_connection(user_uuid)
@@ -30,8 +35,64 @@ def ensure_chat_bucket(chat_id: ChatId) -> None:
     if chat_id not in active_chat_connections:
         active_chat_connections[chat_id] = {}
 
-async def handle_chat_creation():
-    pass
+async def handle_chat_creation(request_websocket: WebSocket, current_user_uuid: str, new_chat_info):
+    owner_uuid = new_chat_info.get("owner_id")
+    if owner_uuid != current_user_uuid:
+        await send_websocket_error(request_websocket, "create_chat", "invalid_owner_id", "Invalid owner ID")
+        return
+
+    participant_ids = new_chat_info.get("participant_ids", [])
+    if not participant_ids:
+        await send_websocket_error(request_websocket, "create_chat", "missing_participant_ids", "Missing participant IDs")
+        return
+
+    chat_name = new_chat_info.get("chat_name", "")
+    chat_cover = new_chat_info.get("chat_cover", "")
+    chat_type = new_chat_info.get("chat_type", "")
+
+    if len(participant_ids) == 2:
+        chat_type = "direct"
+        chat_name = f"@{participant_ids[0]} and @{participant_ids[1]}"
+        for participant_uuid in participant_ids:
+            if participant_uuid != owner_uuid:
+                direct_chat_exists, direct_chat_id = find_direct_chat_with_user(owner_uuid, participant_uuid)
+                if direct_chat_exists:
+                    await send_websocket_error(request_websocket, "create_chat", "direct_chat_exists", "Direct chat already exists", {"chat_id": direct_chat_id})
+                    return
+
+    participant_permissions = new_chat_info.get("participant_permissions", {})
+    if not participant_permissions or set(participant_permissions.keys()) != set(participant_ids):
+        await send_websocket_error(request_websocket, "create_chat", "invalid_participant_permissions", "Invalid participant permissions")
+
+    try:
+
+        new_chat_id, new_chat_obj = create_chat(
+            chat_name= chat_name,
+            chat_cover=chat_cover,
+            owner_id=owner_uuid,
+            participant_ids=participant_ids,
+            participant_permissions=participant_permissions,
+            chat_type=chat_type
+        )
+
+        new_chat_obj.add_system_message(f"Chat created by {user_uuid_to_username(owner_uuid)}")
+        save_all_databases()
+
+        for participant_uuid in list(new_chat_obj.participants) + list(new_chat_obj.invited_users):
+            attach_user_to_chat(new_chat_id, participant_uuid)
+
+        await broadcast_to_chat(new_chat_id,{
+            "operation": "create_chat",
+            "chat_id": new_chat_id
+        })
+        await send_websocket_acknowledgement(request_websocket, "create_chat", {
+            "chat_id": new_chat_id,
+            "Message": f"Chat '{new_chat_obj.chat_name}' created successfully."
+        })
+
+    except Exception as e:
+        print(f"Error creating chat: {e}")
+        await send_websocket_error(request_websocket, "create_chat", "error", "Error creating chat", {"detail": str(e)})
 
 async def handle_new_message():
     pass
@@ -98,7 +159,8 @@ async def websocket_endpoint(websocket: WebSocket, user_uuid: UserUUID):
                 await send_websocket_acknowledgement(websocket, "pong")
 
             elif operation == "create_chat":
-                pass
+                print(f"Received create_chat from {user_uuid}")
+                await handle_chat_creation(websocket, user_uuid, data)
 
             elif operation == "send_message":
                 pass
