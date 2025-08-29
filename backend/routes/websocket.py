@@ -75,11 +75,11 @@ async def handle_chat_creation(request_websocket: WebSocket, current_user_uuid: 
             chat_type=chat_type
         )
 
-        new_chat_obj.add_system_message(new_chat_id, f"Chat created by {user_uuid_to_username(owner_uuid)}")
+        new_chat_obj.add_system_message(system_message= f"Chat created by {user_uuid_to_username(owner_uuid)}")
         save_all_databases()
 
         for participant_uuid in list(new_chat_obj.participants) + list(new_chat_obj.invited_users):
-            attach_user_to_chat(new_chat_id, participant_uuid)
+            await attach_user_to_chat(new_chat_id, participant_uuid)
 
         await broadcast_to_chat(new_chat_id,{
             "operation": "create_chat",
@@ -120,6 +120,14 @@ async def send_websocket_acknowledgement(websocket: WebSocket, operation: str, e
     if extra:
         payload["data"] = extra
     await websocket.send_json(payload)
+
+async def broadcast_to_chat(chat_id: ChatId, payload: dict):
+    chat_map = active_chat_connections.get(chat_id, {})
+    for user_uuid, websocket in list(chat_map.items()):
+        try:
+            await websocket.send_json(payload)
+        except Exception:
+            pass
 
 @router.websocket('/{user_uuid}')
 async def websocket_endpoint(websocket: WebSocket, user_uuid: UserUUID):

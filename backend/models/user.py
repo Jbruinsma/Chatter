@@ -54,3 +54,4 @@ class User:
 class MessagePreference(Enum):
     ANYONE = "ANYONE"
     FRIENDS = "FRIENDS"
+    NONE = "NONE"

@@ -91,11 +91,12 @@ class Chat:
         return None
 
     def add_message(self, new_message_info: Dict[str, str]):
-        self.messages.append(**new_message_info)
+        self.messages.append(new_message_info)
+        self.mark_unread_for_all()
 
-    def add_system_message(self, chat_id: str, system_message: str):
+    def add_system_message(self, system_message: str):
         message_dict = format_message_dict(
-            chat_id= chat_id,
+            chat_id= self.chat_id,
             chat_type="system",
             message_id= str(uuid.uuid4()),
             sender_id= "system",
@@ -107,9 +108,9 @@ class Chat:
     def format_participant_dict(self, user_uuid: str) -> Dict[str, str]:
         user_status, user_obj = find_user(user_uuid)
         if user_status and user_obj is not None:
-            user_id = user_obj.user_id
+            user_id = user_obj.id
             username = user_obj.username
-            avatar = user_obj.avatar
+            avatar = user_obj.profile_picture
             role = self.get_participant_role(user_uuid)
         else:
             user_id = user_uuid
@@ -168,6 +169,9 @@ class Chat:
                 data["avatar"] = other_info.get("avatar", "")
 
         return data
+
+    def mark_unread_for_all(self) -> None:
+        self.unread_messages_by = set(self.participants)
 
     def mark_unread_for(self, user_uuid: str) -> None:
         if user_uuid in self.participants:

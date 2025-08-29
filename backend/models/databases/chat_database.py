@@ -28,11 +28,11 @@ class ChatDatabase(AVLTree):
             return self.add_chat(chat_name= chat_name, chat_cover=chat_cover, owner_id=owner_id, participant_ids=participant_ids, participant_permissions=participant_permissions, chat_type=chat_type)
         new_chat = Chat(
             chat_name= chat_name,
-            chat_cover=chat_cover,
-            owner_id=owner_id,
-            participants=set(participant_ids),
-            participant_permissions=participant_permissions,
-            chat_type=chat_type
+            chat_cover= chat_cover,
+            owner_id= owner_id,
+            participant_ids= participant_ids,
+            participant_permissions= participant_permissions,
+            chat_type= chat_type
         )
         self.insert(chat_id, new_chat)
         return chat_id, new_chat

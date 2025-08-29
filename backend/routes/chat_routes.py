@@ -12,7 +12,7 @@ async def get_all_chats(user_uuid: str):
     def get_chat_overview(chat_id: str):
         chat_status, chat_obj = find_chat(chat_id)
         if chat_status and chat_obj is not None:
-            return chat_obj.get_chat_overview(viewer_uuid= user_uuid)
+            return chat_obj.to_dict(viewer_uuid= user_uuid)
         return None
 
     try:

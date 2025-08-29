@@ -5,7 +5,7 @@ class ListNode:
         self.value = {
             "messageStatus": "Delivered",
             "chatId": chat_id,
-            "messageType": chat_type,
+            "messageType": message_type,
             "messageId": message_id,
             "senderId": sender_id,
             "message": message,
