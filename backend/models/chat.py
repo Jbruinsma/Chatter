@@ -46,11 +46,14 @@ class Chat:
         if set(participant_permissions.keys()) != set(participant_ids):
             raise ValueError("Participant permissions must include all participants.")
 
+
+
         self.chat_id: str = str(uuid.uuid4())
         self.chat_name: str = chat_name
         self.chat_cover: str = chat_cover
         self.owner_id: str = owner_id
         self.participants: Set[str] = set(participant_ids)
+        self.invited_users: Set[str] = set()
         self.participant_permissions: Dict[str, Dict[str, bool | str]] = participant_permissions
         self.created_at = datetime.now(timezone.utc)
         self.messages: LinkedList = LinkedList()
@@ -62,6 +65,15 @@ class Chat:
                 raise ValueError("Direct chats must have exactly 2 participants.")
             for uid in self.participants:
                 self.participant_permissions[uid]["can_edit"] = True
+
+        for uid in participant_ids:
+            user_status, potential_participant_obj = find_user(uid)
+            if not user_status or potential_participant_obj is None: continue
+            participant_message_preference = potential_participant_obj.message_preferences
+            is_friends = owner_id in potential_participant_obj.following and uid in potential_participant_obj.followers
+            if paarticipant_message_preference == "FRIENDS" and not is_friends:
+                self.invited_users.add(uid)
+                self.participants.remove(uid)
 
     @property
     def is_direct(self) -> bool:
@@ -137,6 +149,7 @@ class Chat:
             "lastMessage": self.messages.tail.value.get("message") if not self.messages.is_empty() else "",
             "type": self.chat_type,
             "isDirect": self.is_direct,
+            "invitedUsers": list(self.invited_users),
         }
 
         if self.is_direct and viewer_uuid:

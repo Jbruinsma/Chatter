@@ -41,8 +41,18 @@ class AVLTree:
         return None
 
     def iterate_all(self):
-        # TODO: implement iterating over all nodes
-        pass
+        stack = []
+        node = self.root
+
+        # Iterative in-order traversal: left → node → right
+        while stack or node:
+            if node:
+                stack.append(node)
+                node = node.left
+            else:
+                node = stack.pop()
+                yield node.value
+                node = node.right
 
     def _insert(self, node, key, value):
         if node is None:
