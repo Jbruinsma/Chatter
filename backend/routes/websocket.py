@@ -75,7 +75,7 @@ async def handle_chat_creation(request_websocket: WebSocket, current_user_uuid: 
             chat_type=chat_type
         )
 
-        new_chat_obj.add_system_message(f"Chat created by {user_uuid_to_username(owner_uuid)}")
+        new_chat_obj.add_system_message(new_chat_id, f"Chat created by {user_uuid_to_username(owner_uuid)}")
         save_all_databases()
 
         for participant_uuid in list(new_chat_obj.participants) + list(new_chat_obj.invited_users):
@@ -132,7 +132,7 @@ async def websocket_endpoint(websocket: WebSocket, user_uuid: UserUUID):
     await websocket.accept()
     await add_user_to_active_connections(user_uuid, websocket)
 
-    user_chat_ids = list(getattr(user_obj, "chat_ids", []))
+    user_chat_ids = list(user_obj.chat_ids.get("main", set()) | user_obj.chat_ids.get("requests", set()))
 
     for chat_id in user_chat_ids:
         await attach_user_to_chat(chat_id, user_uuid)

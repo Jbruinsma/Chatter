@@ -124,12 +124,24 @@ def find_direct_chat_with_user(me_uuid: str, peer_uuid: str) -> Tuple[bool, Opti
             chat_type = getattr(chat, "chat_type", None)
             if participants == {me_uuid, peer_uuid} and (chat_type == "direct" or chat_type is None):
                 return True, chat_id
+
     me_node = USER_MANAGER.search_for_user(me_uuid)
     peer_node = USER_MANAGER.search_for_user(peer_uuid)
     if me_node is None or peer_node is None:
         return False, None
-    me_chats = getattr(me_node.value, "chat_ids", set())
-    peer_chats = getattr(peer_node.value, "chat_ids", set())
+
+    def _flatten_chat_ids(user_obj) -> set[str]:
+        ids = getattr(user_obj, "chat_ids", set())
+        if isinstance(ids, dict):
+            out = set()
+            for s in ids.values():
+                out |= set(s)
+            return out
+        return set(ids)
+
+    me_chats = _flatten_chat_ids(me_node.value)
+    peer_chats = _flatten_chat_ids(peer_node.value)
+
     for cid in (me_chats & peer_chats):
         node = CHAT_MANAGER.search_for_chat(cid)
         if node is None:
@@ -140,4 +152,5 @@ def find_direct_chat_with_user(me_uuid: str, peer_uuid: str) -> Tuple[bool, Opti
         if participants == {me_uuid, peer_uuid} and (chat_type == "direct" or chat_type is None):
             DIRECT_CHAT_INDEX_MANAGER.put(me_uuid, peer_uuid, cid)
             return True, cid
+
     return False, None
