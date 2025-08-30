@@ -1,7 +1,7 @@
 import copy
 import uuid
 from datetime import datetime, timezone
-from typing import List, Dict, Set, Optional, Literal
+from typing import List, Dict, Set, Optional, Literal, Any
 
 from backend.models.linked_list.linked_list import LinkedList
 from backend.utils.user_utils import find_user
@@ -27,6 +27,7 @@ class Chat:
 
     def __init__(
         self,
+        chat_id: str,
         chat_name: str,
         chat_cover: str,
         owner_id: str,
@@ -48,7 +49,7 @@ class Chat:
         if set(participant_permissions.keys()) != set(participant_ids):
             raise ValueError("Participant permissions must include all participants.")
 
-        self.chat_id: str = str(uuid.uuid4())
+        self.chat_id: str = chat_id
         self.chat_name: str = chat_name
         self.chat_cover: str = chat_cover
         self.owner_id: str = owner_id
@@ -127,9 +128,12 @@ class Chat:
     def last_message_to_dict(self) -> Dict[str, object]:
         return self.messages.tail.value
 
-    def to_dict(self, viewer_uuid: Optional[str] = None) -> Dict[str, object]:
+    def to_dict(self, viewer_uuid: Optional[str] = None) -> dict[Any, Any] | None | dict[str, object]:
         if len(self.participants) == 0 or self.owner_id not in self.participants:
             return {}
+
+        if viewer_uuid is not None and viewer_uuid not in self.participants:
+            return None
 
         participants_by_id: Dict[str, Dict[str, str]] = {}
         for user_uuid in list(self.participants):

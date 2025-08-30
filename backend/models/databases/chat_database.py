@@ -27,6 +27,7 @@ class ChatDatabase(AVLTree):
         if self.search(chat_id) is not None:
             return self.add_chat(chat_name= chat_name, chat_cover=chat_cover, owner_id=owner_id, participant_ids=participant_ids, participant_permissions=participant_permissions, chat_type=chat_type)
         new_chat = Chat(
+            chat_id= chat_id,
             chat_name= chat_name,
             chat_cover= chat_cover,
             owner_id= owner_id,

@@ -25,8 +25,8 @@ def create_chat(
     chat_type: Optional[str] = None
 ) -> Tuple[str, object]:
 
-    owner_ok, owner_obj = find_user(owner_id)
-    if not owner_ok or owner_obj is None:
+    owner_status, owner_obj = find_user(owner_id)
+    if not owner_status or owner_obj is None:
         raise ValueError("Owner not found")
 
     participants = set(participant_ids) | {owner_id}

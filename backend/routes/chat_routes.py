@@ -28,7 +28,10 @@ async def get_all_chats(user_uuid: str):
             "requests": [get_chat_overview(chat_id) for chat_id in user_request_chat_ids]
         }
 
-        return {"chats": chat_overviews}
+        return {
+            "chats": chat_overviews
+        }
+
     except Exception as e:
         print(f"Error fetching chats: {e}")
 
@@ -38,4 +41,25 @@ async def get_all_chats(user_uuid: str):
             "requests": []
         },
         "message": "Error fetching chats. Try again later."
+    }
+
+@router.get('/{user_uuid}/{chat_id}')
+async def get_chat(user_uuid: str, chat_id: str):
+    user_status, user_obj = find_user(user_uuid)
+    if not user_status or user_obj is None:
+        return {"error": "User not found."}
+
+    user_main_chat_ids = list(user_obj.chat_ids.get("main", []))
+    user_request_chat_ids = list(user_obj.chat_ids.get("requests", []))
+    if chat_id not in user_main_chat_ids and chat_id not in user_request_chat_ids:
+        return {
+            "error": "Chat not found."
+        }
+
+    chat_status, chat_obj = find_chat(chat_id)
+    if not chat_status or chat_obj is None:
+        return {"error": "Chat not found."}
+
+    return {
+        "chat": chat_obj.to_dict(viewer_uuid= user_uuid)
     }

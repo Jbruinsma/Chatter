@@ -258,22 +258,33 @@ async def handle_chat_update(request_websocket: WebSocket, user_uuid: UserUUID, 
             })
             await attach_user_to_chat(chat_id, participant_uuid)
 
-    if updated_chat_name:
-        chat_obj.chat_name = updated_chat_name
+    if updated_chat_name: chat_obj.chat_name = updated_chat_name
 
-    if updated_chat_cover:
-        chat_obj.chat_cover = updated_chat_cover
-
-    save_all_databases()
-    await send_websocket_acknowledgement(request_websocket, "update_chat", {
-        "chat_id": chat_id,
-    })
+    if updated_chat_cover: chat_obj.chat_cover = updated_chat_cover
 
     chat_obj.add_system_message(system_message= f"{user_uuid_to_username(user_uuid)} made updates to the chat")
     await broadcast_to_chat(chat_id, {
         "operation": "send_message",
         "MessageInfo": format_message_dict_for_json(**chat_obj.last_message_to_dict()),
         "hasUnreadMessages": True
+    })
+
+    save_all_databases()
+
+    await broadcast_to_chat(chat_id, {
+        "operation": "update_chat",
+        "chat_id": chat_id,
+        "participantIdsList": list(chat_obj.participant_ids),
+        "invitedIdsList": list(chat_obj.invited_users),
+    })
+
+    for participant_uuid in removed_participant_ids_list:
+        await detach_user_from_chat(chat_id, participant_uuid)
+
+    await send_websocket_acknowledgement(request_websocket, "update_chat_confirmation", {
+        "chat_id": chat_id,
+        "message": "Chat updated successfully.",
+        "unadded_users": unadded_users
     })
 
 
