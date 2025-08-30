@@ -392,6 +392,8 @@ async def handle_chat_request_decline(request_websocket: WebSocket, user_uuid: U
 
     chat_obj.invited_users.discard(user_uuid)
     user_obj.chat_ids["requests"].discard(chat_id)
+    if user_uuid in chat_participant_permissions_dict:
+        chat_obj.participant_permissions.pop(user_uuid, None)
 
     ensure_chat_bucket(chat_id)
     detach_user_from_chat(chat_id, user_uuid)
@@ -402,8 +404,28 @@ async def handle_chat_request_decline(request_websocket: WebSocket, user_uuid: U
         "message": "Chat request declined successfully.",
     })
 
-async def handle_username_update():
-    pass
+async def handle_profile_update(request_websocket: WebSocket, user_uuid: UserUUID, update_info: dict):
+    new_username = update_info.get("new_username")
+    new_pfp = update_info.get("new_pfp")
+
+    user_status, user_obj = find_user(user_uuid)
+    if not user_status or user_obj is None:
+        await send_websocket_error(request_websocket, "update_profile", "invalid_user_id", "Invalid user ID")
+        return
+
+    if new_username: user_obj.username = new_username
+    if new_pfp: user_obj.pfp = new_pfp
+
+    for chat_id in user_obj.chat_ids["main"] | user_obj.chat_ids["requests"]:
+        await broadcast_to_chat(chat_id, {
+            "operation": "update_profile",
+            "user_id": user_uuid,
+        })
+
+    save_all_databases()
+    await send_websocket_acknowledgement(request_websocket, "update_profile", {
+        "message": "Profile updated successfully.",
+    })
 
 async def send_websocket_error(websocket: WebSocket, operation: str, code: str, message: str, extra: dict | None = None) -> None:
     payload = {"type": "error", "operation": operation, "code": code, "message": message}
@@ -475,22 +497,26 @@ async def websocket_endpoint(websocket: WebSocket, user_uuid: UserUUID):
                 await handle_chat_leave(websocket, user_uuid, data)
 
             elif operation == "read_receipt":
-                pass
+                print(f"Received read_receipt from {user_uuid}")
+                await handle_read_receipt(websocket, user_uuid, data)
 
             elif operation == "typing_receipt":
                 pass
 
             elif operation == "update_chat":
-                pass
+                print(f"Updating chat from {user_uuid}")
 
             elif operation == "accept_chat_request":
-                pass
+                print(f"Received accept_chat_request from {user_uuid}")
+                await handle_chat_request_acceptance(websocket, user_uuid, data)
 
             elif operation == "decline_chat_request":
-                pass
+                print(f"Received decline_chat_request from {user_uuid}")
+                await handle_chat_request_decline(websocket, user_uuid, data)
 
             elif operation == "update_username" or operation == "update_profile_picture":
-                pass
+                print(f"Received profile update from {user_uuid}")
+                await handle_profile_update(websocket, user_uuid, data)
 
             else:
                 await send_websocket_error(websocket, operation or "unknown", "unsupported_operation", "Unsupported operation")
