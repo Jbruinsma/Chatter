@@ -8,6 +8,8 @@ from backend.utils.chat_utils import create_chat, find_direct_chat_with_user
 from backend.utils.database_utils import save_all_databases
 from backend.utils.formatting import format_message_dict_for_json
 
+from random import randint
+
 router = APIRouter()
 
 ChatId = Annotated[str, "chat_id"]
@@ -28,6 +30,14 @@ async def attach_user_to_chat(chat_id: ChatId, user_uuid: UserUUID) -> None:
         return
     ensure_chat_bucket(chat_id)
     active_chat_connections[chat_id][user_uuid] = user_websocket
+
+async def detach_user_from_chat(chat_id: ChatId, user_uuid: UserUUID) -> None:
+    chat_map = active_chat_connections.get(chat_id)
+    if not chat_map:
+        return
+    chat_map.pop(user_uuid, None)
+    if not chat_map:
+        active_chat_connections.pop(chat_id, None)
 
 def get_user_connection(user_uuid: UserUUID) -> WebSocket | None:
     return active_user_connections.get(user_uuid)
@@ -106,7 +116,6 @@ async def handle_new_message(request_websocket: WebSocket, message_info: dict):
         await send_websocket_error(request_websocket, "send_message", "invalid_chat_id", "Invalid chat ID")
 
     ensure_chat_bucket(chat_id)
-
     chat_obj.add_message(message_info)
     save_all_databases()
 
@@ -121,8 +130,54 @@ async def handle_new_message(request_websocket: WebSocket, message_info: dict):
         "message_id": message_info.get("message_id")
     })
 
-async def handle_chat_leave():
-    pass
+async def handle_chat_leave(request_websocket: WebSocket, user_uuid: UserUUID, exit_event_info: dict):
+    chat_id = exit_event_info.get("chat_id")
+    if not chat_id:
+        await send_websocket_error(request_websocket, "leave_chat", "missing_chat_id", "Missing chat ID")
+        return
+
+    user_status, user_obj = find_user(user_uuid)
+    if not user_status or user_obj is None:
+        await send_websocket_error(request_websocket, "leave_chat", "invalid_user_id", "Invalid user ID")
+
+    chat_status, chat_obj = find_chat(chat_id)
+    if not chat_status or chat_obj is None:
+        await send_websocket_error(request_websocket, "leave_chat", "invalid_chat_id", "Invalid chat ID")
+
+    ensure_chat_bucket(chat_id)
+
+    is_owner = chat_obj.owner_id == user_uuid
+
+    chat_obj.participant_ids.discard(user_uuid)
+    chat_obj.participant_permissions.pop(user_uuid, None)
+    user_obj.chat_ids["main"].discard(chat_id)
+    chat_obj.add_system_message(system_message= f"{user_uuid_to_username(user_uuid)} left")
+
+    broadcast_to_chat(chat_id, {
+        "operation": "send_message",
+        "messageInfo": format_message_dict_for_json(**chat_obj.last_message_to_dict()),
+        "hasUnreadMessages": True
+    })
+
+    if is_owner:
+        participant_ids_list = list(chat_obj.participant_ids)
+        random_new_owner_index = randint(0, len(participant_ids_list) - 1)
+        new_owner_id = participant_ids_list[random_new_owner_index]
+        chat_obj.owner_id = new_owner_id
+        chat_obj.participant_permissions[new_owner_id]["can_edit"] = True
+        chat_obj.add_system_message(system_message= f"{user_uuid_to_username(new_owner_id)} has been made owner")
+
+        broadcast_to_chat(chat_id, {
+            "operation": "send_message",
+            "MessageInfo": format_message_dict_for_json(**chat_obj.last_message_to_dict()),
+            "hasUnreadMessages": True
+        })
+
+    await detach_user_from_chat(chat_id, user_uuid)
+    save_all_databases()
+    await send_websocket_acknowledgement(request_websocket, "leave_chat", {
+        "chat_id": chat_id,
+    })
 
 async def handle_read_receipt():
     pass
@@ -195,10 +250,12 @@ async def websocket_endpoint(websocket: WebSocket, user_uuid: UserUUID):
                 await handle_chat_creation(websocket, user_uuid, data)
 
             elif operation == "send_message":
-                pass
+                print(f"Received send_message from {user_uuid}")
+                await handle_new_message(websocket, data)
 
             elif operation == "leave_chat":
-                pass
+                print(f"Received leave_chat request from {user_uuid}")
+                await handle_chat_leave(websocket, user_uuid, data)
 
             elif operation == "read_receipt":
                 pass

@@ -48,8 +48,6 @@ class Chat:
         if set(participant_permissions.keys()) != set(participant_ids):
             raise ValueError("Participant permissions must include all participants.")
 
-
-
         self.chat_id: str = str(uuid.uuid4())
         self.chat_name: str = chat_name
         self.chat_cover: str = chat_cover
@@ -125,6 +123,9 @@ class Chat:
             "avatar": avatar,
             "role": role,
         }
+
+    def last_message_to_dict(self) -> Dict[str, object]:
+        return self.messages.tail.value
 
     def to_dict(self, viewer_uuid: Optional[str] = None) -> Dict[str, object]:
         if len(self.participants) == 0 or self.owner_id not in self.participants:
