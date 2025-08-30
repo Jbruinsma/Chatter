@@ -287,12 +287,120 @@ async def handle_chat_update(request_websocket: WebSocket, user_uuid: UserUUID, 
         "unadded_users": unadded_users
     })
 
+async def handle_chat_request_acceptance(request_websocket: WebSocket, user_uuid: UserUUID, acceptance_info: dict):
+    chat_id = acceptance_info.get("chat_id")
+    if not chat_id:
+        await send_websocket_error(request_websocket, "accept_chat_request", "missing_chat_id", "Missing chat ID")
+        return
 
-async def handle_chat_request_acceptance():
-    pass
+    chat_status, chat_obj = find_chat(chat_id)
+    if not chat_status or chat_obj is None:
+        await send_websocket_error(request_websocket, "accept_chat_request", "invalid_chat_id", "Invalid chat ID")
 
-async def handle_chat_request_decline():
-    pass
+    user_status, user_obj = find_user(user_uuid)
+    if not user_status or user_obj is None:
+        await send_websocket_error(request_websocket, "accept_chat_request", "invalid_user_id", "Invalid user ID")
+        return
+
+    if chat_obj.owner_id == user_uuid:
+        await send_websocket_error(request_websocket, "accept_chat_request", "invalid_chat_id", "Cannot accept request from chat owner")
+
+    if chat_id not in user_obj.chat_ids["requests"]:
+        await send_websocket_error(request_websocket, "accept_chat_request", "invalid_chat_id", "User not invited to chat")
+        return
+    if chat_id in user_obj.chat_ids["main"]:
+        await send_websocket_error(request_websocket, "accept_chat_request", "invalid_chat_id", "User already in chat")
+        return
+
+    chat_participant_ids_list = list(chat_obj.participant_ids)
+    chat_invited_users_list = list(chat_obj.invited_users)
+    chat_participant_permissions_dict = chat_obj.participant_permissions
+
+    if user_uuid not in chat_invited_users_list or user_uuid not in chat_participant_ids_list:
+        await send_websocket_error(request_websocket, "accept_chat_request", "invalid_chat_id", "User not invited to chat")
+        return
+    elif user_uuid in chat_participant_ids_list:
+        await send_websocket_error(request_websocket, "accept_chat_request", "invalid_chat_id", "User already in chat")
+        return
+
+    chat_obj.participant_ids.add(user_uuid)
+    chat_obj.invted_users.discard(user_uuid)
+
+    if user_uuid not in chat_participant_permissions_dict:
+        chat_obj.participant_permissions[user_uuid] = {"can_edit": False}
+
+    chat_obj.add_system_message(system_message= f"@{user_uuid_to_username(user_uuid)} has accepted the request to join the chat")
+    await broadcast_to_chat(chat_id, {
+        "operation": "send_message",
+        "MessageInfo": format_message_dict_for_json(**chat_obj.last_message_to_dict()),
+        "hasUnreadMessages": True
+    })
+
+    user_obj.chat_ids["main"].add(chat_id)
+    user_obj.chat_ids["requests"].discard(chat_id)
+
+    ensure_chat_bucket(chat_id)
+    attah_user_to_chat(chat_id, user_uuid)
+
+    await broadcast_to_chat(chat_id, {
+        "operation": "user_joined_chat",
+        "user_id": user_uuid,
+    })
+
+    save_all_databases()
+    await send_websocket_acknowledgement(request_websocket, "accept_chat_request", {
+        "chat_id": chat_id,
+        "message": "Chat request accepted successfully.",
+    })
+
+async def handle_chat_request_decline(request_websocket: WebSocket, user_uuid: UserUUID, acceptance_info: dict):
+    chat_id = acceptance_info.get("chat_id")
+    if not chat_id:
+        await send_websocket_error(request_websocket, "decline_chat_request", "missing_chat_id", "Missing chat ID")
+        return
+
+    chat_status, chat_obj = find_chat(chat_id)
+    if not chat_status or chat_obj is None:
+        await send_websocket_error(request_websocket, "decline_chat_request", "invalid_chat_id", "Invalid chat ID")
+
+    user_status, user_obj = find_user(user_uuid)
+    if not user_status or user_obj is None:
+        await send_websocket_error(request_websocket, "decline_chat_request", "invalid_user_id", "Invalid user ID")
+        return
+
+    if chat_obj.owner_id == user_uuid:
+        await send_websocket_error(request_websocket, "decline_chat_request", "invalid_chat_id","You are the chat owner.")
+        return
+
+    if chat_id not in user_obj.chat_ids["requests"]:
+        await send_websocket_error(request_websocket, "decline_chat_request", "invalid_chat_id","User not invited to chat")
+        return
+    if chat_id in user_obj.chat_ids["main"]:
+        await send_websocket_error(request_websocket, "decline_chat_request", "invalid_chat_id", "User already in chat")
+        return
+
+    chat_participant_ids_list = list(chat_obj.participant_ids)
+    chat_invited_users_list = list(chat_obj.invited_users)
+    chat_participant_permissions_dict = chat_obj.participant_permissions
+
+    if user_uuid not in chat_invited_users_list or user_uuid not in chat_participant_ids_list:
+        await send_websocket_error(request_websocket, "decline_chat_request", "invalid_chat_id", "User not invited to chat")
+        return
+    elif user_uuid in chat_participant_ids_list:
+        await send_websocket_error(request_websocket, "decline_chat_request", "invalid_chat_id", "User already in chat")
+        return
+
+    chat_obj.invited_users.discard(user_uuid)
+    user_obj.chat_ids["requests"].discard(chat_id)
+
+    ensure_chat_bucket(chat_id)
+    detach_user_from_chat(chat_id, user_uuid)
+
+    save_all_databases()
+    await send_websocket_acknowledgement(request_websocket, "decline_chat_request", {
+        "chat_id": chat_id,
+        "message": "Chat request declined successfully.",
+    })
 
 async def handle_username_update():
     pass
