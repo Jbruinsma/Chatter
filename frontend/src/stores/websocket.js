@@ -234,9 +234,12 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function fetchDashboardChatPreviews() {
+    console.log('Fetching dashboard chat previews')
     if (user.value === null || user.value === undefined) return
+    console.log(user.value)
     try {
       const url = `${BASE_API_LINK}/chats/${user.value}`
+      console.log(url)
       const response = await fetchAPI(url)
       const mainChatSummaries = response.chats.main || []
       const chatRequestSummaries = response.chats.requests || []

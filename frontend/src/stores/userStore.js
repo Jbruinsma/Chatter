@@ -1,3 +1,4 @@
+// stores/user.ts
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
@@ -5,29 +6,31 @@ export const useUserStore = defineStore(
   'user',
   () => {
     const username = ref('')
-    const id = ref('')
+    const uuid = ref('')
     const isLoggedIn = ref(false)
 
     function login(loggedInUsername, loggedInId) {
       username.value = loggedInUsername
-      id.value = loggedInId
+      uuid.value = loggedInId
       isLoggedIn.value = true
+      console.log('User logged in:', loggedInUsername, loggedInId)
     }
 
     function logout() {
       username.value = ''
-      id.value = ''
+      uuid.value = ''
       isLoggedIn.value = false
     }
 
-    return { username, isLoggedIn, login, logout }
+    // ✅ expose uuid
+    return { username, uuid, isLoggedIn, login, logout }
   },
   {
-    // pinia-plugin-persistedstate config
     persist: {
       key: 'bruinsma-user',
-      storage: localStorage,        // use sessionStorage if you prefer tab-only
-      paths: ['username', 'isLoggedIn'],
+      storage: localStorage,
+      // ✅ persist uuid too (optional but usually desired)
+      paths: ['username', 'uuid', 'isLoggedIn'],
     },
   }
 )

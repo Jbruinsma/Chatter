@@ -6,6 +6,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 from backend.utils.user_utils import find_user, user_uuid_to_username
 from backend.utils.chat_utils import create_chat, find_direct_chat_with_user
 from backend.utils.database_utils import save_all_databases
+from backend.utils.formatting import format_message_dict_for_json
 
 router = APIRouter()
 
@@ -94,8 +95,31 @@ async def handle_chat_creation(request_websocket: WebSocket, current_user_uuid: 
         print(f"Error creating chat: {e}")
         await send_websocket_error(request_websocket, "create_chat", "error", "Error creating chat", {"detail": str(e)})
 
-async def handle_new_message():
-    pass
+async def handle_new_message(request_websocket: WebSocket, message_info: dict):
+    chat_id = message_info.get("chat_id")
+    if not chat_id:
+        await send_websocket_error(request_websocket, "send_message", "missing_chat_id", "Missing chat ID")
+        return
+
+    chat_status, chat_obj = find_chat(chat_id)
+    if not chat_status or chat_obj is None:
+        await send_websocket_error(request_websocket, "send_message", "invalid_chat_id", "Invalid chat ID")
+
+    ensure_chat_bucket(chat_id)
+
+    chat_obj.add_message(message_info)
+    save_all_databases()
+
+    await broadcast_to_chat(chat_id, {
+        "operation": "send_message",
+        "messageInfo": format_message_dict_for_json(**message_info),
+        "hasUnreadMessages": True
+    })
+
+    await send_websocket_acknowledgement(request_websocket, "message_delivered", {
+        "chat_id": chat_id,
+        "message_id": message_info.get("message_id")
+    })
 
 async def handle_chat_leave():
     pass

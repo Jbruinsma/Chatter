@@ -138,6 +138,7 @@
 
 <script setup>
 import { ref, watch, nextTick, onMounted, computed } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/userStore.js'
 import { verifyLogin } from '@/utils/verification.js'
@@ -150,7 +151,9 @@ import FollowRequestsModal from "@/components/FollowRequestsModal.vue";
 const router = useRouter()
 const websocket = ref(useChatStore())
 const userStore = useUserStore()
-const currentUser = ref(userStore.id)
+const { uuid, username, isLoggedIn } = storeToRefs(userStore)
+console.log(uuid.value)
+const currentUserId = computed(() => userStore.uuid)
 
 const activeChatName = ref(null)
 
@@ -193,8 +196,10 @@ watch(
 
 onMounted(async () => {
   await verifyLogin()
-  websocket.value.connect(currentUser.value)
+  console.log("DASHBOARD USER ID: ", currentUserId)
+  websocket.value.connect(currentUserId.value)
   await websocket.value.fetchDashboardChatPreviews()
+  console.log("DASHBOARD CHATS: ", websocket.value.dashboardChats)
   requestSum.value = websocket.value.chatRequests.length
   await nextTick()
   scrollChatsToTop({ behavior: 'auto', force: true })

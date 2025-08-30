@@ -75,6 +75,8 @@ class Chat:
     def get_participant_role(self, user_uuid: str) -> str:
         if user_uuid == self.owner_id:
             return "Owner"
+        elif user_uuid in self.invited_users:
+            return "Invited"
         try:
             if self.participant_permissions[user_uuid].get("can_edit", False):
                 return "Editor"
