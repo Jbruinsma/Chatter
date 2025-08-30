@@ -1,8 +1,10 @@
+from types import new_class
 from typing import Optional, Callable, Tuple, Literal
 import threading
 
 from backend.instances import CHAT_MANAGER, USER_MANAGER, DIRECT_CHAT_INDEX_MANAGER
 from backend.utils.user_utils import find_user
+from platformdirs import user_log_dir
 
 Category = Literal["main", "requests", "deny"]
 
@@ -14,7 +16,6 @@ def find_chat(chat_id):
     chat = chat_node.value
     return True, chat
 
-
 def create_chat(
     chat_name: str,
     chat_cover: str,
@@ -23,26 +24,6 @@ def create_chat(
     participant_permissions: dict[str, dict[str, bool | str]],
     chat_type: Optional[str] = None
 ) -> Tuple[str, object]:
-    def normalize_pref(x) -> str:
-        raw = getattr(x, "value", x)
-        return str(raw or "ANYONE").strip().upper()
-
-    def get_chat_category_for_participant(
-        is_user_public: bool,
-        is_friends_with_owner: bool,
-        participant_message_preference_: object,
-        is_blocked: bool = False
-    ) -> Category:
-        if is_blocked:
-            return "deny"
-        pref = normalize_pref(participant_message_preference_)
-        if is_friends_with_owner:
-            return "main"
-        if pref == "NONE":
-            return "deny"
-        if is_user_public:
-            return "main" if pref == "ANYONE" else "requests"
-        return "requests"
 
     owner_ok, owner_obj = find_user(owner_id)
     if not owner_ok or owner_obj is None:
@@ -92,10 +73,10 @@ def create_chat(
         is_blocked = (owner_id in participant_blocked) or (uid in owner_blocked)
 
         category = get_chat_category_for_participant(
-            is_user_public=participant.public_status,
-            is_friends_with_owner=is_friends,
-            participant_message_preference_=participant.message_preferences,
-            is_blocked=is_blocked
+            is_user_public= participant.public_status,
+            is_friends_with_owner= is_friends,
+            participant_message_preference_= participant.message_preferences,
+            is_blocked= is_blocked
         )
 
         if category == "deny":
@@ -117,6 +98,91 @@ def create_chat(
 
     return new_chat_id, new_chat_obj
 
+def add_user_to_chat(chat_obj, new_user_uuid: str, participant_permissions: dict | None = None) -> bool:
+    # Basic validation
+    if chat_obj is None or not new_user_uuid:
+        return False
+
+    # Don't allow adding to an existing direct chat beyond its 2 participants.
+    if getattr(chat_obj, "chat_type", None) == "direct":
+        return new_user_uuid in getattr(chat_obj, "participants", set())
+
+    # Owner is already a participant
+    if new_user_uuid == getattr(chat_obj, "owner_id", None):
+        return True
+
+    # Load user to add
+    new_user_status, user_obj = find_user(new_user_uuid)
+    if not new_user_status or user_obj is None:
+        return False
+
+    # Idempotent success if already present
+    if new_user_uuid in getattr(chat_obj, "participants", set()):
+        return False
+    if new_user_uuid in getattr(chat_obj, "invited_users", set()):
+        return False
+
+    # Load owner
+    owner_status, owner_obj = find_user(chat_obj.owner_id)
+    if not owner_status or owner_obj is None:
+        return False
+
+    # Relationships & blocking
+    owner_following = set(getattr(owner_obj, "following", []))
+    user_following = set(getattr(user_obj, "following", []))
+    owner_blocked = set(getattr(owner_obj, "blocked_users", []))
+    user_blocked = set(getattr(user_obj, "blocked_users", []))
+
+    is_friends = (new_user_uuid in owner_following) and (chat_obj.owner_id in user_following)
+    is_blocked = (chat_obj.owner_id in user_blocked) or (new_user_uuid in owner_blocked)
+
+    category = get_chat_category_for_participant(
+        is_user_public= getattr(user_obj, "public_status", False),
+        is_friends_with_owner= is_friends,
+        participant_message_preference_= getattr(user_obj, "message_preferences", "ANYONE"),
+        is_blocked= is_blocked
+    )
+    if category == "deny":
+        return False
+
+    # Ensure user's inbox structure exists (matches create_chat behavior)
+    user_inbox = getattr(user_obj, "chat_ids", None)
+    if not isinstance(user_inbox, dict):
+        user_obj.chat_ids = {"main": set(), "requests": set()}
+    else:
+        user_obj.chat_ids.setdefault("main", set())
+        user_obj.chat_ids.setdefault("requests", set())
+
+    # FRIENDS-only preference and not friends → send invite (not a participant yet)
+    if normalize_pref(getattr(user_obj, "message_preferences", "ANYONE")) == "FRIENDS" and not is_friends:
+        if not hasattr(chat_obj, "invited_users") or chat_obj.invited_users is None:
+            chat_obj.invited_users = set()
+        chat_obj.invited_users.add(new_user_uuid)
+        # Make sure they're not in participants
+        if hasattr(chat_obj, "participants"):
+            chat_obj.participants.discard(new_user_uuid)
+        return True
+
+    # Otherwise add as participant and place the chat in their inbox category
+    if not hasattr(chat_obj, "participants") or chat_obj.participants is None:
+        chat_obj.participants = set()
+    chat_obj.participants.add(new_user_uuid)
+
+    # Update per-user permissions; default to can_edit=False if not provided
+    perms = dict(participant_permissions or {})
+    perms.setdefault("can_edit", False)
+    if not hasattr(chat_obj, "participant_permissions") or chat_obj.participant_permissions is None:
+        chat_obj.participant_permissions = {}
+    chat_obj.participant_permissions[new_user_uuid] = perms
+
+    # Add chat to the user's inbox category
+    user_obj.chat_ids[category].add(getattr(chat_obj, "chat_id"))
+
+    # Clean any stale invite
+    if hasattr(chat_obj, "invited_users"):
+        chat_obj.invited_users.discard(new_user_uuid)
+
+    return True
 
 def _flatten_chat_ids(user_obj) -> set[str]:
     ids = getattr(user_obj, "chat_ids", set())
@@ -220,3 +286,24 @@ def find_direct_chat_with_user(me_uuid: str, peer_uuid: str) -> Tuple[bool, Opti
             return True, cid
 
     return False, None
+
+def get_chat_category_for_participant(
+        is_user_public: bool,
+        is_friends_with_owner: bool,
+        participant_message_preference_: object,
+        is_blocked: bool = False
+) -> Category:
+    if is_blocked:
+        return "deny"
+    pref = normalize_pref(participant_message_preference_)
+    if is_friends_with_owner:
+        return "main"
+    if pref == "NONE":
+        return "deny"
+    if is_user_public:
+        return "main" if pref == "ANYONE" else "requests"
+    return "requests"
+
+def normalize_pref(preference_enum) -> str:
+    raw = getattr(preference_enum, "value", preference_enum)
+    return str(raw or "ANYONE").strip().upper()

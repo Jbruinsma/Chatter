@@ -4,7 +4,7 @@ from fastapi import APIRouter
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from backend.utils.user_utils import find_user, user_uuid_to_username
-from backend.utils.chat_utils import create_chat, find_direct_chat_with_user
+from backend.utils.chat_utils import create_chat, find_direct_chat_with_user, add_user_to_chat, find_chat
 from backend.utils.database_utils import save_all_databases
 from backend.utils.formatting import format_message_dict_for_json
 
@@ -179,13 +179,111 @@ async def handle_chat_leave(request_websocket: WebSocket, user_uuid: UserUUID, e
         "chat_id": chat_id,
     })
 
-async def handle_read_receipt():
-    pass
+async def handle_read_receipt(request_websocket: WebSocket, user_uuid: UserUUID, read_receipt_info: dict):
+    chat_id = read_receipt_info.get("chat_id")
+    if not chat_id:
+        await send_websocket_error(request_websocket, "read_receipt", "missing_chat_id", "Missing chat ID")
+        return
+
+    chat_status, chat_obj = find_chat(chat_id)
+    if not chat_status or chat_obj is None:
+        await send_websocket_error(request_websocket, "read_receipt", "invalid_chat_id", "Invalid chat ID")
+
+
+    chat_obj.unread_messages_by.discard(user_uuid)
+
+    save_all_databases()
+
+    await send_websocket_acknowledgement(request_websocket, "read_receipt", {
+        "chat_id": chat_id,
+        "hasUnreadMessages": False
+    })
 
 async def handle_typing_receipt():
     pass
 
-async def handle_chat_update():
+async def handle_chat_update(request_websocket: WebSocket, user_uuid: UserUUID, update_info: dict):
+    removed_participant_ids_list = payload.get("removed_participant_ids", [])
+    added_participant_ids_list = payload.get("added_participants", [])
+    updated_permissions = payload.get("updated_permissions", {})
+    updated_chat_name = payload.get("chat_name", None)
+    updated_chat_cover = payload.get("chat_cover", None)
+
+    unadded_users = []
+
+    chat_id = update_info.get("chat_id")
+    if not chat_id:
+        await send_websocket_error(request_websocket, "update_chat", "missing_chat_id", "Missing chat ID")
+        return
+
+    chat_status, chat_obj = find_chat(chat_id)
+    if not chat_status or chat_obj is None:
+        await send_websocket_error(request_websocket, "update_chat", "invalid_chat_id", "Invalid chat ID")
+
+    ensure_chat_bucket(chat_id)
+
+    for participant_uuid in updated_permissions:
+        if participant_uuid in removed_participant_ids_list or participant_uuid in added_participant_ids_list: continue
+        chat_obj.participant_permissions[participant_uuid] = updated_permissions[participant_uuid]
+
+    for participant_uuid in removed_participant_ids_list:
+        user_status, user_obj = find_user(participant_uuid)
+        invited_user: bool = participant_uuid in chat_obj.invited_users
+        if invited_user: chat_obj.invited_users.discard(participant_uuid)
+        else: chat_obj.participant_ids.discard(participant_uuid)
+        if not invited_user:
+            chat_obj.add_system_message(system_message= f"@{user_uuid_to_username(participant_uuid)} has been removed by @{user_uuid_to_username(user_uuid)}")
+            await broadcast_to_chat(chat_id, {
+                "operation": "send_message",
+                "MessageInfo": format_message_dict_for_json(**chat_obj.last_message_to_dict()),
+                "hasUnreadMessages": True
+            })
+        if not user_status or user_obj is None: continue
+        if invited_user: user_obj.chat_ids["requests"].discard(chat_id)
+        else: user_obj.chat_ids["requests"].discard(chat_id)
+
+    for participant_uuid in added_participant_ids_list:
+        user_status, user_obj = find_user(participant_uuid)
+        if not user_status or user_obj is None:
+            unadded_users.append(user_uuid_to_username(participant_uuid))
+            continue
+        participant_permissions = updated_permissions.get(participant_uuid, {})
+        add_status: bool = add_user_to_chat(chat_obj= chat_obj, user_obj= user_obj, permissions= participant_permissions)
+        if add_status:
+            chat_obj.add_system_message(system_message= f"@{user_uuid_to_username(participant_uuid)} has been added by @{user_uuid_to_username(user_uuid)}")
+            await broadcast_to_chat(chat_id, {
+                "operation": "send_message",
+                "MessageInfo": format_message_dict_for_json(**chat_obj.last_message_to_dict()),
+                "hasUnreadMessages": True
+            })
+            await attach_user_to_chat(chat_id, participant_uuid)
+
+    if updated_chat_name:
+        chat_obj.chat_name = updated_chat_name
+
+    if updated_chat_cover:
+        chat_obj.chat_cover = updated_chat_cover
+
+    save_all_databases()
+    await send_websocket_acknowledgement(request_websocket, "update_chat", {
+        "chat_id": chat_id,
+    })
+
+    chat_obj.add_system_message(system_message= f"{user_uuid_to_username(user_uuid)} made updates to the chat")
+    await broadcast_to_chat(chat_id, {
+        "operation": "send_message",
+        "MessageInfo": format_message_dict_for_json(**chat_obj.last_message_to_dict()),
+        "hasUnreadMessages": True
+    })
+
+
+async def handle_chat_request_acceptance():
+    pass
+
+async def handle_chat_request_decline():
+    pass
+
+async def handle_username_update():
     pass
 
 async def send_websocket_error(websocket: WebSocket, operation: str, code: str, message: str, extra: dict | None = None) -> None:
@@ -264,6 +362,15 @@ async def websocket_endpoint(websocket: WebSocket, user_uuid: UserUUID):
                 pass
 
             elif operation == "update_chat":
+                pass
+
+            elif operation == "accept_chat_request":
+                pass
+
+            elif operation == "decline_chat_request":
+                pass
+
+            elif operation == "update_username" or operation == "update_profile_picture":
                 pass
 
             else:
