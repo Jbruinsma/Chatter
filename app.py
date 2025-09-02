@@ -35,7 +35,6 @@ async def lifespan(app: FastAPI):
     USER_MANAGER.save()
     CHAT_MANAGER.save_chat_database()
     UUID_INDEX.save()
-    DIRECT_CHAT_INDEX_MANAGER.save()
     print("Data saved.")
 
 

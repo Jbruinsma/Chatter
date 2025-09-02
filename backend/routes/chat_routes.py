@@ -63,3 +63,20 @@ async def get_chat(user_uuid: str, chat_id: str):
     return {
         "chat": chat_obj.to_dict(viewer_uuid= user_uuid)
     }
+
+@router.get('/{user_uuid}/{chat_id}/messages')
+async def get_chat_messages(user_uuid: str, chat_id: str):
+    user_status, user_obj = find_user(user_uuid)
+    if not user_status or user_obj is None:
+        return {"error": "User not found."}
+
+    if chat_id not in user_obj.chat_ids["main"] and chat_id not in user_obj.chat_ids["requests"]:
+        return {"error": "User does not have permission to view the contents of this chat."}
+
+    chat_status, chat_obj = find_chat(chat_id)
+    if not chat_status or chat_obj is None:
+        return {"error": "Chat not found."}
+
+    return {
+        "messages": chat_obj.all_messages_to_list()
+    }

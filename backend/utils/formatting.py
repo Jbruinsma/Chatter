@@ -3,7 +3,7 @@ from typing import Dict
 
 def format_message_dict(
         chat_id: str,
-        chat_type: str,
+        message_type: str,
         message_id: str,
         sender_id: str,
         message: str,
@@ -11,7 +11,7 @@ def format_message_dict(
 ) -> Dict[str, str | datetime]:
     return {
         "chat_id": chat_id,
-        "message_type": chat_type,
+        "message_type": message_type,
         "message_id": message_id,
         "sender_id": sender_id,
         "message": message,
@@ -20,15 +20,16 @@ def format_message_dict(
 
 def format_message_dict_for_json(
         chat_id: str,
-        chat_type: str,
+        message_type: str,
         message_id: str,
         sender_id: str,
         message: str,
         time_sent: datetime
 ):
     return {
+        "messageStatus": "delivered",
         "chatId": chat_id,
-        "messageType": chat_type,
+        "messageType": message_type,
         "messageId": message_id,
         "senderId": sender_id,
         "message": message,

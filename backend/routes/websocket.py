@@ -120,14 +120,14 @@ async def handle_new_message(request_websocket: WebSocket, message_info: dict):
     save_all_databases()
 
     await broadcast_to_chat(chat_id, {
-        "operation": "send_message",
+        "operation": "receive_message",
         "messageInfo": format_message_dict_for_json(**message_info),
         "hasUnreadMessages": True
     })
 
     await send_websocket_acknowledgement(request_websocket, "message_delivered", {
-        "chat_id": chat_id,
-        "message_id": message_info.get("message_id")
+        "chatId": chat_id,
+        "messageId": message_info.get("message_id")
     })
 
 async def handle_chat_leave(request_websocket: WebSocket, user_uuid: UserUUID, exit_event_info: dict):
@@ -195,7 +195,7 @@ async def handle_read_receipt(request_websocket: WebSocket, user_uuid: UserUUID,
     save_all_databases()
 
     await send_websocket_acknowledgement(request_websocket, "read_receipt", {
-        "chat_id": chat_id,
+        "chatId": chat_id,
         "hasUnreadMessages": False
     })
 
@@ -273,18 +273,16 @@ async def handle_chat_update(request_websocket: WebSocket, user_uuid: UserUUID, 
 
     await broadcast_to_chat(chat_id, {
         "operation": "update_chat",
-        "chat_id": chat_id,
-        "participantIdsList": list(chat_obj.participant_ids),
-        "invitedIdsList": list(chat_obj.invited_users),
+        "chatId": chat_id,
     })
 
     for participant_uuid in removed_participant_ids_list:
         await detach_user_from_chat(chat_id, participant_uuid)
 
     await send_websocket_acknowledgement(request_websocket, "update_chat_confirmation", {
-        "chat_id": chat_id,
+        "chatId": chat_id,
         "message": "Chat updated successfully.",
-        "unadded_users": unadded_users
+        "unaddedUsers": unadded_users
     })
 
 async def handle_chat_request_acceptance(request_websocket: WebSocket, user_uuid: UserUUID, acceptance_info: dict):
@@ -312,19 +310,19 @@ async def handle_chat_request_acceptance(request_websocket: WebSocket, user_uuid
         await send_websocket_error(request_websocket, "accept_chat_request", "invalid_chat_id", "User already in chat")
         return
 
-    chat_participant_ids_list = list(chat_obj.participant_ids)
+    chat_participant_ids_list = list(chat_obj.participants)
     chat_invited_users_list = list(chat_obj.invited_users)
     chat_participant_permissions_dict = chat_obj.participant_permissions
 
-    if user_uuid not in chat_invited_users_list or user_uuid not in chat_participant_ids_list:
+    if user_uuid not in chat_invited_users_list:
         await send_websocket_error(request_websocket, "accept_chat_request", "invalid_chat_id", "User not invited to chat")
         return
-    elif user_uuid in chat_participant_ids_list:
+    if user_uuid in chat_participant_ids_list:
         await send_websocket_error(request_websocket, "accept_chat_request", "invalid_chat_id", "User already in chat")
         return
 
-    chat_obj.participant_ids.add(user_uuid)
-    chat_obj.invted_users.discard(user_uuid)
+    chat_obj.participants.add(user_uuid)
+    chat_obj.invited_users.discard(user_uuid)
 
     if user_uuid not in chat_participant_permissions_dict:
         chat_obj.participant_permissions[user_uuid] = {"can_edit": False}
@@ -332,7 +330,7 @@ async def handle_chat_request_acceptance(request_websocket: WebSocket, user_uuid
     chat_obj.add_system_message(system_message= f"@{user_uuid_to_username(user_uuid)} has accepted the request to join the chat")
     await broadcast_to_chat(chat_id, {
         "operation": "send_message",
-        "MessageInfo": format_message_dict_for_json(**chat_obj.last_message_to_dict()),
+        "MessageInfo": chat_obj.last_message_to_dict(),
         "hasUnreadMessages": True
     })
 
@@ -340,16 +338,15 @@ async def handle_chat_request_acceptance(request_websocket: WebSocket, user_uuid
     user_obj.chat_ids["requests"].discard(chat_id)
 
     ensure_chat_bucket(chat_id)
-    attah_user_to_chat(chat_id, user_uuid)
 
     await broadcast_to_chat(chat_id, {
-        "operation": "user_joined_chat",
-        "user_id": user_uuid,
+        "operation": "update_chat",
+        "chatId": chat_id
     })
 
     save_all_databases()
     await send_websocket_acknowledgement(request_websocket, "accept_chat_request", {
-        "chat_id": chat_id,
+        "chatId": chat_id,
         "message": "Chat request accepted successfully.",
     })
 
@@ -379,11 +376,11 @@ async def handle_chat_request_decline(request_websocket: WebSocket, user_uuid: U
         await send_websocket_error(request_websocket, "decline_chat_request", "invalid_chat_id", "User already in chat")
         return
 
-    chat_participant_ids_list = list(chat_obj.participant_ids)
+    chat_participant_ids_list = list(chat_obj.participants)
     chat_invited_users_list = list(chat_obj.invited_users)
     chat_participant_permissions_dict = chat_obj.participant_permissions
 
-    if user_uuid not in chat_invited_users_list or user_uuid not in chat_participant_ids_list:
+    if user_uuid not in chat_invited_users_list:
         await send_websocket_error(request_websocket, "decline_chat_request", "invalid_chat_id", "User not invited to chat")
         return
     elif user_uuid in chat_participant_ids_list:
@@ -400,8 +397,13 @@ async def handle_chat_request_decline(request_websocket: WebSocket, user_uuid: U
 
     save_all_databases()
     await send_websocket_acknowledgement(request_websocket, "decline_chat_request", {
-        "chat_id": chat_id,
+        "chatId": chat_id,
         "message": "Chat request declined successfully.",
+    })
+
+    await broadcast_to_chat(chat_id, {
+        "operation": "update_chat",
+        "chatId": chat_id,
     })
 
 async def handle_profile_update(request_websocket: WebSocket, user_uuid: UserUUID, update_info: dict):
@@ -418,8 +420,8 @@ async def handle_profile_update(request_websocket: WebSocket, user_uuid: UserUUI
 
     for chat_id in user_obj.chat_ids["main"] | user_obj.chat_ids["requests"]:
         await broadcast_to_chat(chat_id, {
-            "operation": "update_profile",
-            "user_id": user_uuid,
+            "operation": "update_chat",
+            "chatId": chat_id
         })
 
     save_all_databases()

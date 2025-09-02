@@ -98,7 +98,7 @@ class Chat:
     def add_system_message(self, system_message: str):
         message_dict = format_message_dict(
             chat_id= self.chat_id,
-            chat_type="system",
+            message_type="system",
             message_id= str(uuid.uuid4()),
             sender_id= "system",
             message= system_message,
@@ -126,14 +126,24 @@ class Chat:
         }
 
     def last_message_to_dict(self) -> Dict[str, object]:
+        print(self.messages.tail.value)
         return self.messages.tail.value
+
+    def all_messages_to_list(self):
+        chats: List[Dict[str, str]] = []
+        curr = self.messages.head
+        while curr:
+            chats.append(curr.value)
+            curr = curr.next
+        return chats
 
     def to_dict(self, viewer_uuid: Optional[str] = None) -> dict[Any, Any] | None | dict[str, object]:
         if len(self.participants) == 0 or self.owner_id not in self.participants:
             return {}
 
         if viewer_uuid is not None and viewer_uuid not in self.participants:
-            return None
+            if viewer_uuid not in self.invited_users:
+                return None
 
         participants_by_id: Dict[str, Dict[str, str]] = {}
         for user_uuid in list(self.participants):
@@ -160,8 +170,9 @@ class Chat:
             "participantCount": len(self.participants),
             "capabilities": capabilities,
             "createdAt": self.created_at.isoformat(timespec="seconds").replace("+00:00", "Z"),
-            "hasUnreadMessages": bool(viewer_uuid is not None and viewer_uuid in self.unread_messages_by),
+            "hasUnreadMessages": bool(viewer_uuid is not None and (viewer_uuid in self.unread_messages_by or viewer_uuid in self.invited_users)),
             "lastMessage": self.messages.tail.value.get("message") if not self.messages.is_empty() else "",
+            "lastMessageSentAt": self.messages.tail.value.get("timeSent") if not self.messages.is_empty() else "",
             "type": self.chat_type,
             "isDirect": self.is_direct,
             "invitedUsers": list(self.invited_users),
@@ -172,7 +183,7 @@ class Chat:
             if other_uuid:
                 other_info = participants_by_id.get(other_uuid) or self.format_participant_dict(other_uuid)
                 data["otherParticipant"] = other_info 
-                data["title"] = other_info.get("username", "")
+                data["title"] = f"@{other_info.get("username", "")}"
                 data["avatar"] = other_info.get("avatar", "")
 
         return data

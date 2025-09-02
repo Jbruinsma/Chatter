@@ -57,25 +57,25 @@ def create_chat(
     for uid in tuple(new_chat_obj.participants):
         if uid == owner_id:
             continue
-        ok, participant = find_user(uid)
-        if not ok or participant is None:
+        participant_status, participant_obj = find_user(uid)
+        if not participant_status or participant_obj is None:
             new_chat_obj.participants.discard(uid)
             continue
 
-        ensure_inbox(participant)
+        ensure_inbox(participant_obj)
 
         owner_following = set(getattr(owner_obj, "following", []))
-        participant_following = set(getattr(participant, "following", []))
+        participant_following = set(getattr(participant_obj, "following", []))
         owner_blocked = set(getattr(owner_obj, "blocked_users", []))
-        participant_blocked = set(getattr(participant, "blocked_users", []))
+        participant_blocked = set(getattr(participant_obj, "blocked_users", []))
 
         is_friends = (uid in owner_following) and (owner_id in participant_following)
         is_blocked = (owner_id in participant_blocked) or (uid in owner_blocked)
 
         category = get_chat_category_for_participant(
-            is_user_public= participant.public_status,
+            is_user_public= participant_obj.public_status,
             is_friends_with_owner= is_friends,
-            participant_message_preference_= participant.message_preferences,
+            participant_message_preference_= participant_obj.message_preferences,
             is_blocked= is_blocked
         )
 
@@ -83,14 +83,14 @@ def create_chat(
             new_chat_obj.participants.discard(uid)
             continue
 
-        if normalize_pref(participant.message_preferences) == "FRIENDS" and not is_friends:
+        if normalize_pref(participant_obj.message_preferences) == "FRIENDS" and not is_friends:
             if not hasattr(new_chat_obj, "invited_users"):
                 new_chat_obj.invited_users = set()
             new_chat_obj.invited_users.add(uid)
             new_chat_obj.participants.discard(uid)
-            continue
+            category = "requests"
 
-        participant.chat_ids[category].add(new_chat_id)
+        participant_obj.chat_ids[category].add(new_chat_id)
 
     if chat_type == "direct":
         a_uuid, b_uuid = sorted(participants)

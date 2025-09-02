@@ -36,6 +36,16 @@ class User:
     def check_password(self, attempt) -> bool:
         return bcrypt.checkpw(attempt.encode('utf-8'), self.password)
 
+    def update_message_preference(self, preference: str):
+        if preference == "ANYONE":
+            self.message_preferences = MessagePreference.ANYONE
+        elif preference == "FRIENDS":
+            self.message_preferences = MessagePreference.FRIENDS
+        elif preference == "NONE":
+            self.message_preferences = MessagePreference.NONE
+        else:
+            raise ValueError("Invalid preference")
+
     def to_dict(self):
         return {
             "id": self.id,
