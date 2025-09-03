@@ -23,7 +23,12 @@ class User:
             "main": set(),
             "requests": set()
         }
-        self.public_status: bool = is_public
+
+        self.allow_notifications= {
+            "essential": True,
+            "messages": False
+        }
+        self.notifications: List[str] = []
 
     def __str__(self) -> str:
         return f"User: {self.username}, {self.followers}, {self.following}, {self.chat_ids}, {self.public_status}"
@@ -58,7 +63,9 @@ class User:
             "follow_requests": list(self.follow_requests),
             "chat_ids": list(self.chat_ids.get("main", [])),
             "chat_requests": list(self.chat_ids.get("requests", [])),
-            "public_status": self.public_status
+            "public_status": self.is_public,
+            "notifications": self.notifications,
+            "notification_settings": self.allow_notifications,
         }
 
 class MessagePreference(Enum):

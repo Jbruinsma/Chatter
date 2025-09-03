@@ -47,6 +47,8 @@ def ensure_chat_bucket(chat_id: ChatId) -> None:
         active_chat_connections[chat_id] = {}
 
 async def handle_chat_creation(request_websocket: WebSocket, current_user_uuid: str, new_chat_info):
+    if 'data' in new_chat_info:
+        new_chat_info = new_chat_info.get("data", {})
     owner_uuid = new_chat_info.get("owner_id")
     if owner_uuid != current_user_uuid:
         await send_websocket_error(request_websocket, "create_chat", "invalid_owner_id", "Invalid owner ID")
@@ -98,7 +100,7 @@ async def handle_chat_creation(request_websocket: WebSocket, current_user_uuid: 
         })
         await send_websocket_acknowledgement(request_websocket, "create_chat", {
             "chat_id": new_chat_id,
-            "Message": f"Chat '{new_chat_obj.chat_name}' created successfully."
+            "message": f"Chat '{new_chat_obj.chat_name}' created successfully."
         })
 
     except Exception as e:

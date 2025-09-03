@@ -37,6 +37,7 @@ async def login(request: Request):
                 "message": "Login successful.",
                 "id": user_uuid,
                 "username": username,
+                "notificationPreferences": user_obj.allow_notifications,
             }
 
     return {"error": error_message}

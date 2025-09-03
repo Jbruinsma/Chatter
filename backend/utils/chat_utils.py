@@ -73,7 +73,7 @@ def create_chat(
         is_blocked = (owner_id in participant_blocked) or (uid in owner_blocked)
 
         category = get_chat_category_for_participant(
-            is_user_public= participant_obj.public_status,
+            is_user_public= participant_obj.is_public,
             is_friends_with_owner= is_friends,
             participant_message_preference_= participant_obj.message_preferences,
             is_blocked= is_blocked
@@ -137,7 +137,7 @@ def add_user_to_chat(chat_obj, new_user_uuid: str, participant_permissions: dict
     is_blocked = (chat_obj.owner_id in user_blocked) or (new_user_uuid in owner_blocked)
 
     category = get_chat_category_for_participant(
-        is_user_public= getattr(user_obj, "public_status", False),
+        is_user_public= getattr(user_obj, "is_public", False),
         is_friends_with_owner= is_friends,
         participant_message_preference_= getattr(user_obj, "message_preferences", "ANYONE"),
         is_blocked= is_blocked
