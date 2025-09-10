@@ -97,12 +97,14 @@ class Chat:
 
     def add_system_message(self, system_message: str):
         message_dict = format_message_dict(
-            chat_id= self.chat_id,
+            chat_id=self.chat_id,
             message_type="system",
-            message_id= str(uuid.uuid4()),
-            sender_id= "system",
-            message= system_message,
-            time_sent= datetime.now(timezone.utc)
+            message_id=str(uuid.uuid4()),
+            sender_id="system",
+            message=system_message,
+            time_sent=datetime.now(timezone.utc)
+            .isoformat(timespec="milliseconds")
+            .replace("+00:00", "Z")
         )
         self.add_message(message_dict)
 
@@ -126,7 +128,6 @@ class Chat:
         }
 
     def last_message_to_dict(self) -> Dict[str, object]:
-        print(self.messages.tail.value)
         return self.messages.tail.value
 
     def all_messages_to_list(self):
@@ -177,6 +178,12 @@ class Chat:
             "isDirect": self.is_direct,
             "invitedUsers": list(self.invited_users),
         }
+
+        invited_participants_by_id: Dict[str, Dict[str, str]] = {}
+        if len(self.invited_users) > 0:
+            for user_uuid in list(self.invited_users):
+                invited_participants_by_id[user_uuid] = self.format_participant_dict(user_uuid)
+            data["invitedParticipantsById"] = invited_participants_by_id
 
         if self.is_direct and viewer_uuid:
             other_uuid = self._other_participant_uuid(viewer_uuid)

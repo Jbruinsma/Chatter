@@ -2,6 +2,9 @@ from typing import Dict, List
 from enum import Enum
 import bcrypt
 
+from backend.utils.formatting import format_notification_timestamp
+
+
 
 class User:
 
@@ -28,10 +31,10 @@ class User:
             "essential": True,
             "messages": False
         }
-        self.notifications: List[str] = []
+        self.notifications: List[Dict[str, str]] = []
 
     def __str__(self) -> str:
-        return f"User: {self.username}, {self.followers}, {self.following}, {self.chat_ids}, {self.public_status}"
+        return f"User: Username: {self.username}, UUID: {self.id}, Chat IDS: {self.chat_ids}, Public status: {self.is_public}"
 
     @staticmethod
     def _hash_password(plain_text) -> bytes:
@@ -50,6 +53,38 @@ class User:
             self.message_preferences = MessagePreference.NONE
         else:
             raise ValueError("Invalid preference")
+
+    def update_message_preferences(self, new_preference: str):
+        if new_preference == "ANYONE":
+            self.message_preferences = MessagePreference.ANYONE
+
+        elif new_preference == "FRIENDS":
+            self.message_preferences = MessagePreference.FRIENDS
+
+        elif new_preference == "NONE":
+            self.message_preferences = MessagePreference.NONE
+
+        else:
+            raise ValueError("Invalid preference")
+
+    def add_notification(self, message, notification_type, extra= None):
+        notification = {
+            "message": message,
+            "timestamp": format_notification_timestamp(),
+            "type": notification_type,
+            "extra": extra
+        }
+        self.notifications.append(notification)
+
+    def settings_to_dict(self):
+        return {
+            "id": self.id,
+            "notificationPreferences": self.allow_notifications,
+            "profilePicture": self.profile_picture,
+            "username": self.username,
+            "isPublic": self.is_public,
+            "messagePreferences": self.message_preferences.value,
+        }
 
     def to_dict(self):
         return {

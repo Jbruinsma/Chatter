@@ -4,7 +4,6 @@ import threading
 
 from backend.instances import CHAT_MANAGER, USER_MANAGER, DIRECT_CHAT_INDEX_MANAGER
 from backend.utils.user_utils import find_user
-from platformdirs import user_log_dir
 
 Category = Literal["main", "requests", "deny"]
 
