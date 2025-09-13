@@ -7,17 +7,28 @@ from typing import Dict, Any
 
 from backend.instances import UUID_INDEX, USER_MANAGER
 from backend.models.user import User
-from backend.utils.user_utils import find_user
+from backend.utils.user_utils import find_user, format_pfp_link
 from backend.utils.formatting import format_count
+
+from backend.models.pydantic_models import (
+    EssentialInfo,
+    Settings,
+    Profile,
+    Stats,
+    Relations,
+    Permissions,
+    ErrorMessage
+)
+
+
 
 router = APIRouter()
 
-# ----- Paths: make these absolute so they match the /media mount in app.py -----
-# Assuming this file lives at backend/routes/user_routes.py and app.py is at project root
-APP_ROOT = Path(__file__).resolve().parents[2]   # project root (where app.py lives)
+
+APP_ROOT = Path(__file__).resolve().parents[2]
 MEDIA_DIR = (APP_ROOT / "media").resolve()
 AVATAR_DIR = (MEDIA_DIR / "avatars").resolve()
-MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5MB
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 
 def _to_bool(v):
@@ -61,21 +72,21 @@ async def login(request: Request):
     password = data.get('password')
 
     if not username or not password:
-        return {"error": "Username and password are required."}
+        return ErrorMessage(error= "Username and password are required.")
 
     try:
         user_uuid = UUID_INDEX[username]
     except KeyError:
-        return {"error": error_message}
+        return ErrorMessage(error= error_message)
 
     if user_uuid is not None:
         user_status, user_obj = find_user(user_uuid)
         if not user_status or user_obj is None:
-            return {"error": error_message}
+            return ErrorMessage(error= error_message)
 
         correct_password = user_obj.check_password(password)
         if not correct_password:
-            return {"error": error_message}
+            return ErrorMessage(error= error_message)
         else:
             return {
                 "message": "Login successful.",
@@ -83,9 +94,7 @@ async def login(request: Request):
                 "username": username,
                 "notificationPreferences": user_obj.allow_notifications,
             }
-
-    return {"error": error_message}
-
+    return ErrorMessage(error= error_message)
 
 @router.post('/register')
 async def register(request: Request):
@@ -95,10 +104,10 @@ async def register(request: Request):
     is_public = data.get('is_public')
 
     if not username or not password:
-        return {"error": "Username and password are required."}
+        return ErrorMessage(error= "Username and password are required.")
 
     if username in UUID_INDEX:
-        return {"error": "Username already exists."}
+        return ErrorMessage(error= f"Username @'{username}' already exists.")
 
     UUID_INDEX[username] = str(uuid.uuid4())
     new_user_uuid = UUID_INDEX[username]
@@ -119,34 +128,34 @@ async def register(request: Request):
 
 @router.get('/')
 async def get_user(user_uuid: str | None = Query(None), username: str | None = Query(None)) -> Dict[str, Any]:
-    error: Dict[str, str] = {"error": "User not found."}
+    error_message: "User not found."
     try:
         if user_uuid is None and username is None:
-            return {"error": "Must provide either user_uuid or username."}
+            return ErrorMessage(error= "Must provide either user_uuid or username.")
         if username is not None:
             user_uuid = UUID_INDEX[username]
         user_status, user_obj = find_user(user_uuid)
         if not user_status or user_obj is None:
-            return error
+            return ErrorMessage(error= error_message)
         return user_obj.to_dict()
     except KeyError:
-        return error
+        return ErrorMessage(error= error_message)
 
 
 @router.get('/{user_uuid}/preferences')
 async def get_user_preferences(user_uuid: str, request: Request):
-    ok, user = find_user(user_uuid)
-    if not ok or not user:
-        return {"error": "User not found."}
+    user_status, user_obj = find_user(user_uuid)
+    if not user_status or not user_obj:
+        return ErrorMessage(error= "User not found.")
 
-    data = user.settings_to_dict()
-
-    pp = data.get("profilePicture")
-    if pp:
-        if pp.startswith("/media/"):
-            pp = pp.replace("/media/", "", 1)
-        data["profilePicture"] = str(request.url_for("media", path=pp))
-    return data
+    return Settings(
+        id = user_obj.id,
+        notificationPreferences = user_obj.allow_notifications,
+        profilePicture = format_pfp_link(request, user_obj.profile_picture),
+        username = user_obj.username,
+        isPublic = user_obj.is_public,
+        messagePreferences = user_obj.message_preferences.value,
+    )
 
 
 @router.post('/{user_uuid}/preferences')
@@ -187,14 +196,14 @@ async def update_user_preferences(user_uuid: str, request: Request):
             try:
                 notification_preferences = json.loads(np_raw)
             except json.JSONDecodeError:
-                return {"error": "Invalid notification_preferences JSON."}
+                return ErrorMessage(error= "Invalid notification_preferences JSON.")
     else:
         try:
             data = await request.json()
         except Exception:
             data = {}
         if not data:
-            return {"error": "No data provided."}
+            return ErrorMessage(error= "No data provided.")
         notification_preferences = data.get('notification_preferences')
         profile_picture = None
         username = data.get('username')
@@ -204,7 +213,7 @@ async def update_user_preferences(user_uuid: str, request: Request):
     # ---- Load user ----
     user_status, user_obj = find_user(user_uuid)
     if not user_status or user_obj is None:
-        return {"error": "User not found."}
+        return ErrorMessage(error= "User not found.")
 
     notification_prop = ""
 
@@ -221,7 +230,7 @@ async def update_user_preferences(user_uuid: str, request: Request):
         if profile_picture is not None:
             ctype = getattr(profile_picture, "content_type", None)
             if ctype not in {"image/jpeg", "image/png"}:
-                return {"error": "Unsupported image type. Use JPG or PNG."}
+                return ErrorMessage(error= "Unsupported image type. Use JPG or PNG.")
 
             # Decide extension from content-type or filename
             ext = mimetypes.guess_extension(ctype) or Path(profile_picture.filename or "").suffix.lower() or ".jpg"
@@ -249,7 +258,7 @@ async def update_user_preferences(user_uuid: str, request: Request):
         if is_public is not None:
             parsed_public = _to_bool(is_public)
             if parsed_public is None:
-                return {"error": "Invalid value for is_public."}
+                return ErrorMessage(error= "(Internal Error) Invalid value for is_public.")
             user_obj.is_public = parsed_public
 
             notification_prop = update_notification_prop(notification_prop, f"Public status updated: {'Public' if parsed_public else 'Private'}")
@@ -263,7 +272,7 @@ async def update_user_preferences(user_uuid: str, request: Request):
                 notification_prop = update_notification_prop(notification_prop, f"Message preferences updated: {old_message_preferences.value} -> {user_obj.message_preferences.value}")
                 success_message = "Your message preferences have been updated."
             except ValueError as ve:
-                return {"error": str(ve)}
+                return ErrorMessage(error= str(ve))
 
         print(notification_prop)
         if len(notification_prop) > 0:
@@ -284,14 +293,13 @@ async def update_user_preferences(user_uuid: str, request: Request):
         raise
     except Exception as e:
         print("[prefs] error:", e)
-        return {"error": "User preferences not updated: " + str(e)}
-
+        return ErrorMessage(error= "User preferences not updated: " + str(e))
 
 @router.get('/{user_uuid}/followers')
 def get_user_followers(user_uuid: str):
     user_status, user_obj = find_user(user_uuid)
     if not user_status or user_obj is None:
-        return {"error": "User not found."}
+        return ErrorMessage(error= "User not found.")
 
     follower_info = []
     followers_ids_list = list(user_obj.followers)
@@ -307,13 +315,13 @@ def get_user_followers(user_uuid: str):
 async def update_user_notifications(user_uuid: str, request: Request):
     user_status, user_obj = find_user(user_uuid)
     if not user_status or user_obj is None:
-        return {"error": "User not found."}
+        return ErrorMessage(error= "User not found.")
 
     data = await request.json()
 
     deleted_notification_index = data.get('notification_index')
     if deleted_notification_index is None:
-        return {"error": "notification_index is required."}
+        return ErrorMessage(error= "notification_index is required.")
 
     user_obj.notifications.pop(deleted_notification_index)
     USER_MANAGER.save()
@@ -323,7 +331,7 @@ async def update_user_notifications(user_uuid: str, request: Request):
 async def clear_user_notifications(user_uuid: str, request: Request):
     user_status, user_obj = find_user(user_uuid)
     if not user_status or user_obj is None:
-        return {"error": "User not found."}
+        return ErrorMessage(error= "User not found.")
 
     user_obj.notifications.clear()
     USER_MANAGER.save()
@@ -333,28 +341,28 @@ async def clear_user_notifications(user_uuid: str, request: Request):
 async def get_user_notifications(user_uuid: str, request: Request):
     user_status, user_obj = find_user(user_uuid)
     if not user_status or user_obj is None:
-        return {"error": "User not found."}
+        return ErrorMessage(error= "User not found.")
     return user_obj.notifications
 
 @router.get('/profiles/')
 async def get_user_profile(request: Request, target_profile_uuid: str | None = Query(None), target_profile_username: str | None = Query(None), viewer_uuid: str | None = Query(None)):
     if target_profile_uuid is None and target_profile_username is None:
-        return {"error": "Must provide either target_profile_uuid or target_profile_username."}
+        return ErrorMessage(error= "Must provide either target_profile_uuid or target_profile_username.")
 
     if target_profile_username is not None:
         try:
             target_profile_uuid = UUID_INDEX[target_profile_username]
         except KeyError:
-            return {"error": "Target user not found."}
+            return ErrorMessage(error= f"User @{target_profile_username} not found.")
 
     target_status, target_obj = find_user(target_profile_uuid)
     if not target_status or target_obj is None:
-        return {"error": "Target user not found."}
+        return ErrorMessage(error= "Target user not found.")
 
     if viewer_uuid != "null":
         viewer_status, viewer_obj = find_user(viewer_uuid)
         if not viewer_status or viewer_obj is None:
-            return {"error": "Viewer user not found."}
+            return ErrorMessage(error= "Viewer user not found.")
 
         is_self = viewer_obj.id == target_obj.id
         viewer_follows_user = viewer_obj.id in target_obj.followers
@@ -380,43 +388,31 @@ async def get_user_profile(request: Request, target_profile_uuid: str | None = Q
     can_message = True if not target_obj.message_preferences.value == "NONE" else False
 
     follower_count = format_count(len(target_obj.followers))
-
     following_count = format_count(len(target_obj.following))
 
-    user_summary = {
-        "id": target_obj.id,
-        "username": target_obj.username,
-        "profilePicture": target_obj.profile_picture,
-        "publicStatus": target_obj.is_public,
-
-        "stats": {
-            "followersCount": len(target_obj.followers),
-            "followingCount": len(target_obj.following)
-        },
-
-        "relations": {
-            "isSelf": is_self,
-            "viewerFollowsUser": viewer_follows_user,
-            "userFollowsViewer": user_follows_viewer,
-            "pendingFollowRequest": pending_follow_request,
-            "isBlockedByUser": is_blocked_by_user,
-            "viewerBlockedUser": viewer_blocked_user,
-        },
-
-        "permissions": {
-            "canViewProfile": can_view_profile,
-            "canMessage": can_message,
-            "canFollow": can_follow,
-        }
-    }
-
-    pp = user_summary.get("profilePicture")
-    if pp:
-        if pp.startswith("/media/"):
-            pp = pp.replace("/media/", "", 1)
-        user_summary["profilePicture"] = str(request.url_for("media", path=pp))
-
-    return user_summary
+    return Profile(
+        id= target_obj.id,
+        username= target_obj.username,
+        profilePicture= format_pfp_link(request, target_obj.profile_picture),
+        publicStatus= target_obj.is_public,
+        stats= Stats(
+            followersCount= follower_count,
+            followingCount= following_count
+        ),
+        relations = Relations(
+            isSelf= is_self,
+            viewerFollowsUser= viewer_follows_user,
+            userFollowsViewer= user_follows_viewer,
+            pendingFollowRequest= pending_follow_request,
+            isBlockedByUser= is_blocked_by_user,
+            viewerBlockedUser= viewer_blocked_user
+        ),
+        permissions = Permissions(
+            canViewProfile= can_view_profile,
+            canMessage= can_message,
+            canFollow= can_follow
+        )
+    )
 
 @router.post('/{user_uuid}/follow')
 async def follow_user(user_uuid: str, request: Request):
@@ -425,28 +421,27 @@ async def follow_user(user_uuid: str, request: Request):
     follower_id = data.get('follower_id')
 
     if not target_id or not follower_id:
-        return {"error": "target_id and follower_id are required."}
+        return ErrorMessage(error= "target_id and follower_id are required.")
 
     if follower_id != user_uuid:
-        return {"error": f"follower_id must match the authenticated user {user_uuid}."}
+        return ErrorMessage(error= f"follower_id must match the authenticated user {user_uuid}." )
 
     target_status, target_user_obj = find_user(target_id)
     if not target_status or target_user_obj is None:
-        return {"error": "Target user not found."}
+        return ErrorMessage(error= "Target user not found.")
 
     follower_status, follower_user_obj = find_user(follower_id)
     if not follower_status or follower_user_obj is None:
-        return {"error": "Follower user not found."}
+        return ErrorMessage(error= "Follower user not found.")
 
     if target_id in follower_user_obj.blocked_users:
-        return {"error": f"'@{target_user_obj.username}' is blocked."}
+        return ErrorMessage(error= f"'@{target_user_obj.username}' is blocked.")
 
     if follower_id in target_user_obj.blocked_users:
-        return {"error": f"Cannot follow @'{target_user_obj.username}'."}
+        return ErrorMessage(error= f"'@{follower_user_obj.username}' is blocked.")
 
     if follower_id in target_user_obj.followers or follower_id in target_user_obj.follow_requests:
-        return {"error": f"You are already following @'{target_user_obj.username}'."}
-
+        return ErrorMessage(error= f"You are already following @{target_user_obj.username}.")
     target_user_public_status = target_user_obj.is_public
 
     if target_user_public_status:
@@ -489,21 +484,21 @@ async def unfollow_user(user_uuid: str, request: Request):
     unfollower_id = data.get('unfollower_id')
 
     if not target_id or not unfollower_id:
-        return {"error": "target_id and unfollower_id are required."}
+        return ErrorMessage(error= "target_id and unfollower_id are required.")
 
     if unfollower_id != user_uuid:
-        return {"error": f"unfollower_id must match the authenticated user {user_uuid}."}
+        return ErrorMessage(error= f"unfollower_id must match the authenticated user {user_uuid}." )
 
     target_status, target_user_obj = find_user(target_id)
     if not target_status or target_user_obj is None:
-        return {"error": "Target user not found."}
+        return ErrorMessage(error= "Target user not found.")
 
     unfollower_status, unfollower_user_obj = find_user(unfollower_id)
     if not unfollower_status or unfollower_user_obj is None:
-        return {"error": "Unfollower user not found."}
+        return ErrorMessage(error= "Unfollower user not found.")
 
     if unfollower_id not in target_user_obj.followers:
-        return {"error": f"You are not following @{target_user_obj.username}."}
+        return ErrorMessage(error= f"You are not following @{target_user_obj.username}." )
 
     target_user_obj.followers.remove(unfollower_id)
     unfollower_user_obj.following.remove(target_id)
@@ -527,21 +522,21 @@ async def cancel_follow_request(user_uuid: str, request: Request):
     request_sender_id = data.get('request_sender_id')
 
     if not target_id or not request_sender_id:
-        return {"error": "target_id and request_sender_id are required."}
+        return ErrorMessage(error= "target_id and request_sender_id are required.")
 
     if request_sender_id != user_uuid:
-        return {"error": f"request_sender_id must match the authenticated user {user_uuid}."}
+        return ErrorMessage(error= f"request_sender_id must match the authenticated user {user_uuid}." )
 
     target_status, target_user_obj = find_user(target_id)
     if not target_status or target_user_obj is None:
-        return {"error": "Target user not found."}
+        return ErrorMessage(error= "Target user not found.")
 
     request_sender_status, request_sender_user_obj = find_user(request_sender_id)
     if not request_sender_status or request_sender_user_obj is None:
-        return {"error": "Request sender user not found."}
+        return ErrorMessage(error= "Request sender user not found.")
 
     if request_sender_id not in target_user_obj.follow_requests:
-        return {"error": f"You have no pending follow request to @{target_user_obj.username}."}
+        return ErrorMessage(error= f"You have no pending follow request to @{target_user_obj.username}." )
 
     target_user_obj.follow_requests.remove(request_sender_id)
     USER_MANAGER.save()
@@ -554,7 +549,7 @@ async def cancel_follow_request(user_uuid: str, request: Request):
 async def get_follow_requests(user_uuid: str, request: Request):
     user_status, user_obj = find_user(user_uuid)
     if not user_status or user_obj is None:
-        return {"error": "User not found."}
+        return ErrorMessage(error= "User not found.")
 
     follow_requests = []
     user_follow_requests_ids_list = list(user_obj.follow_requests)
@@ -562,14 +557,13 @@ async def get_follow_requests(user_uuid: str, request: Request):
     for follow_request_id in user_follow_requests_ids_list:
         follow_request_status, follow_request_obj = find_user(follow_request_id)
         if not follow_request_status or follow_request_obj is None: continue
-        user_info = follow_request_obj.essentials_to_dict()
-        pp = user_info.get("profilePicture")
-        if pp:
-            if pp.startswith("/media/"):
-                pp = pp.replace("/media/", "", 1)
-            user_info["profilePicture"] = str(request.url_for("media", path=pp))
+        user_info = EssentialInfo(
+            id= follow_request_obj.id,
+            username= follow_request_obj.username,
+            profilePicture= format_pfp_link(request, follow_request_obj.profile_picture),
+            publicStatus= follow_request_obj.is_public
+        )
         follow_requests.append(user_info)
-
     return follow_requests
 
 @router.post('/{user_uuid}/follow_requests')
@@ -579,21 +573,21 @@ async def accept_follow_request(user_uuid: str, request: Request):
     follower_id = data.get('follower_id')
 
     if not target_id or not follower_id:
-        return {"error": "target_id and follower_id are required."}
+        return ErrorMessage(error= "target_id and follower_id are required.")
 
     if target_id != user_uuid:
-        return {"error": f"target_id must match the authenticated user {user_uuid}."}
+        return ErrorMessage(error= f"target_id must match the authenticated user {user_uuid}." )
 
     target_status, target_user_obj = find_user(target_id)
     if not target_status or target_user_obj is None:
-        return {"error": "Target user not found."}
+        return ErrorMessage(error= "Target user not found.")
 
     follower_status, follower_obj = find_user(follower_id)
     if not follower_status or follower_obj is None:
-        return {"error": "Request sender user not found."}
+        return ErrorMessage(error= "Follower user not found.")
 
     if follower_id not in target_user_obj.follow_requests:
-        return {"error": f"You have no pending follow request to @{target_user_obj.username}."}
+        return ErrorMessage(error= f"You have no pending follow request to @{target_user_obj.username}." )
 
     target_user_obj.followers.add(follower_id)
     target_user_obj.follow_requests.remove(follower_id)
@@ -631,21 +625,21 @@ async def decline_follow_request(user_uuid: str, request: Request):
     follower_id = data.get('follower_id')
 
     if not target_id or not follower_id:
-        return {"error": "target_id and follower_id are required."}
+        return ErrorMessage(error= "target_id and follower_id are required.")
 
     if target_id != user_uuid:
-        return {"error": f"target_id must match the authenticated user {user_uuid}."}
+        return ErrorMessage(error= f"target_id must match the authenticated user {user_uuid}." )
 
     target_status, target_user_obj = find_user(target_id)
     if not target_status or target_user_obj is None:
-        return {"error": "Target user not found."}
+        return ErrorMessage(error= "Target user not found.")
 
     follower_status, follower_obj = find_user(follower_id)
     if not follower_status or follower_obj is None:
-        return {"error": "Request sender user not found."}
+        return ErrorMessage(error= "Follower user not found.")
 
     if follower_id not in target_user_obj.follow_requests:
-        return {"error": f"You have no pending follow request to @{target_user_obj.username}."}
+        return ErrorMessage(error= f"You have no pending follow request to @{target_user_obj.username}." )
 
     target_user_obj.follow_requests.remove(follower_id)
     USER_MANAGER.save()
