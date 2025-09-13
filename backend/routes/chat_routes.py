@@ -1,11 +1,11 @@
-# backend/routes/chat_routes.py
 from fastapi import APIRouter, UploadFile, File, HTTPException, Request
 from pathlib import Path
 import uuid, os
 
-from backend.utils.chat_utils import find_chat
+from backend.utils.chat_utils import find_chat, find_direct_chat_with_user
 from backend.utils.user_utils import find_user
 from backend.utils.media import normalize_chat_media
+
 
 router = APIRouter()
 
@@ -110,3 +110,23 @@ async def upload_chat_cover(request: Request, chat_cover: UploadFile = File(...)
 
     print("Saved chat cover:", dest_path)
     return {"chat_cover": full_url, "path": rel_path}
+
+
+@router.get("/{user_uuid}/direct_chats/{participant_uuid}")
+async def get_direct_chat(user_uuid: str, participant_uuid: str, request: Request):
+    user_status, user_obj = find_user(user_uuid)
+    if not user_status or user_obj is None:
+        return {"error": "User not found."}
+
+    participant_status, participant_obj = find_user(participant_uuid)
+    if not participant_status or participant_obj is None:
+        return {"error": "Participant not found."}
+
+    chat_id = None
+
+    chat_status, chat_id = find_direct_chat_with_user(user_uuid, participant_uuid)
+
+    return {
+        "chatStatus": chat_status,
+        "chatId": chat_id
+    }

@@ -62,3 +62,10 @@ def format_notification_timestamp() -> str:
     if dt.utcoffset() == timedelta(0):
         return dt.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
     return dt.isoformat(timespec="milliseconds")
+
+def format_count(count: int) -> str:
+    if count >= 10000:
+        return f"{count // 1000}K"
+    elif count >= 1000000:
+        return f"{count // 1000000}M"
+    return str(count)

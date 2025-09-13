@@ -76,6 +76,14 @@ class User:
         }
         self.notifications.append(notification)
 
+    def essentials_to_dict(self):
+        return {
+            "id": self.id,
+            "username": self.username,
+            "profilePicture": self.profile_picture,
+            "publicStatus": self.is_public,
+        }
+
     def settings_to_dict(self):
         return {
             "id": self.id,

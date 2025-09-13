@@ -85,7 +85,6 @@ async def handle_chat_creation(request_websocket: WebSocket, current_user_uuid: 
 
     if len(participant_ids) == 2:
         chat_type = "direct"
-        chat_name = f"@{participant_ids[0]} and @{participant_ids[1]}"
         for participant_uuid in participant_ids:
             if participant_uuid != owner_uuid:
                 direct_chat_exists, direct_chat_id = find_direct_chat_with_user(owner_uuid, participant_uuid)
@@ -119,6 +118,12 @@ async def handle_chat_creation(request_websocket: WebSocket, current_user_uuid: 
             "operation": "create_chat",
             "chatId": new_chat_id
         })
+
+        if chat_type == "direct":
+            message = f"Direct chat between @{user_uuid_to_username(participant_ids[0])} and @{user_uuid_to_username(participant_ids[1])} created successfully."
+        else:
+            message = f"Chat '{new_chat_obj.chat_name}' created successfully."
+
         message = f"Chat '{new_chat_obj.chat_name}' created successfully."
         await send_acknowledgement(request_websocket, owner_obj, "create_chat_confirmation", message, {
             "chatId": new_chat_id,
@@ -128,6 +133,26 @@ async def handle_chat_creation(request_websocket: WebSocket, current_user_uuid: 
     except Exception as e:
         print(f"Error creating chat: {e}")
         await send_error(request_websocket, owner_obj, "create_chat", "error", "Error creating chat", {"detail": str(e)})
+
+async def handle_direct_chats(request_websocket: WebSocket, user_uuid: UserUUID, chat_info: dict):
+    target_user_uuid = chat_info.get("target_user_id")
+    if not target_user_uuid:
+        await send_websocket_error(request_websocket, "direct_chat", "missing_target_user_id", "Missing target user ID")
+        return
+
+    target_user_status, target_user_obj = find_user(target_user_uuid)
+    if not target_user_status or target_user_obj is None:
+        await send_websocket_error(request_websocket, "direct_chat", "invalid_target_user_id", "Invalid target user ID")
+        return
+
+    chat_status, chat_obj = find_direct_chat_with_user(user_uuid, target_user_uuid)
+    if chat_status and chat_obj is not None:
+        print("DIRECT CHAT EXISTS")
+        return {
+            "chatId": chat_obj.chat_id
+        }
+    else:
+        print("DIRECT CHAT DOES NOT EXIST")
 
 async def handle_new_message(request_websocket: WebSocket, message_info: dict):
     chat_id = message_info.get("chat_id")
@@ -507,35 +532,15 @@ async def handle_profile_update(request_websocket: WebSocket, user_uuid: UserUUI
         })
 
     save_all_databases()
-    await send_websocket_acknowledgement(request_websocket, "update_profile", {
+    await send_websocket_acknowledgement(request_websocket, "success", {
         "message": "Profile updated successfully.",
     })
 
-async def handle_notification(user_uuid: UserUUID, notification_info: dict):
-    print(f"Handling notification from {user_uuid}: {notification_info}")
-    # {
-    #     'recipient_uuid': '9fabbbe0-9a75-4498-958d-2f3f888bd06b',
-    #     'frontend_notification_payload': {
-    #         'function': 'toProfile',
-    #         'uuid': '9fabbbe0-9a75-4498-958d-2f3f888bd06b',
-    #         'message': '@user1 is now following you.'
-    #     },
-    #     'backend_notification_payload': {
-    #         'message': '@user1 is now following you.',
-    #         'notification_type': 'essential',
-    #         'extra': {
-    #             'function': 'toProfile'
-    #         }
-    #     }
-    # }
-
-
+async def handle_notification(notification_info: dict):
     recipient_uuid = notification_info.get('recipient_uuid')
     frontend_notification_payload = notification_info.get('frontend_notification_payload')
-    backend_notification_payload = notification_info.get('backend_notification_payload')
 
-
-    if recipient_uuid is None or frontend_notification_payload is None or backend_notification_payload is None:
+    if recipient_uuid is None or frontend_notification_payload is None:
         print("Notification info is missing required fields.")
         return
 
@@ -543,9 +548,6 @@ async def handle_notification(user_uuid: UserUUID, notification_info: dict):
     if not recipient_status or recipient_obj is None:
         print(f"Recipient {recipient_uuid} does not exist.")
         return
-
-    recipient_obj.add_notification(**backend_notification_payload)
-    save_all_databases()
 
     await broadcast_to_user_out_of_chat(recipient_uuid, {
         "operation": "notification",
@@ -636,6 +638,10 @@ async def websocket_endpoint(websocket: WebSocket, user_uuid: UserUUID):
                 print(f"Received create_chat from {user_uuid}")
                 await handle_chat_creation(websocket, user_uuid, data)
 
+            elif operation == "find_or_create_direct_chat":
+                print(f"Received find_or_create_direct_chat from {user_uuid}")
+                await handle_direct_chats(websocket, user_uuid, data)
+
             elif operation == "send_message":
                 print(f"Received send_message from {user_uuid}")
                 await handle_new_message(websocket, data)
@@ -669,7 +675,7 @@ async def websocket_endpoint(websocket: WebSocket, user_uuid: UserUUID):
 
             elif operation == "send_notification":
                 print(f"Received notification from {user_uuid}")
-                await handle_notification(user_uuid, data)
+                await handle_notification(data)
 
             else:
                 await send_websocket_error(websocket, operation or "unknown", "unsupported_operation", "Unsupported operation")

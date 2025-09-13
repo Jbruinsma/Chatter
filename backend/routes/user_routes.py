@@ -8,6 +8,7 @@ from typing import Dict, Any
 from backend.instances import UUID_INDEX, USER_MANAGER
 from backend.models.user import User
 from backend.utils.user_utils import find_user
+from backend.utils.formatting import format_count
 
 router = APIRouter()
 
@@ -103,6 +104,8 @@ async def register(request: Request):
     new_user_uuid = UUID_INDEX[username]
     new_user = User(uuid=new_user_uuid, username=username, password=password, is_public=is_public)
 
+    new_user.add_notification(f"Welcome @{username}! You are now registered.", "success")
+
     USER_MANAGER.add_user(new_user_uuid, new_user)
     USER_MANAGER.save()
 
@@ -110,6 +113,7 @@ async def register(request: Request):
         "message": "Registration successful.",
         "id": new_user_uuid,
         "username": username,
+        "notificationPreferences": new_user.allow_notifications,
     }
 
 
@@ -147,6 +151,14 @@ async def get_user_preferences(user_uuid: str, request: Request):
 
 @router.post('/{user_uuid}/preferences')
 async def update_user_preferences(user_uuid: str, request: Request):
+
+    def update_notification_prop(prop: str, addon: str):
+        if len(prop) > 0:
+            prop += f", {addon}"
+        else:
+            prop += addon
+        return prop
+
     """
     Unified handler:
       - JSON bodies update preferences/username/public/message prefs.
@@ -183,9 +195,8 @@ async def update_user_preferences(user_uuid: str, request: Request):
             data = {}
         if not data:
             return {"error": "No data provided."}
-        print("[prefs] json keys:", list(data.keys()))
         notification_preferences = data.get('notification_preferences')
-        profile_picture = None  # image is not expected via JSON
+        profile_picture = None
         username = data.get('username')
         is_public = data.get('is_public')
         message_preferences = data.get('message_preferences')
@@ -194,6 +205,8 @@ async def update_user_preferences(user_uuid: str, request: Request):
     user_status, user_obj = find_user(user_uuid)
     if not user_status or user_obj is None:
         return {"error": "User not found."}
+
+    notification_prop = ""
 
     try:
         # ---- Notification preferences ----
@@ -218,11 +231,18 @@ async def update_user_preferences(user_uuid: str, request: Request):
             # Persist a URL that your frontend can load (served by StaticFiles in app.py)
             public_url = f"/media/avatars/{dest_path.name}"
             user_obj.profile_picture = public_url
+
+            notification_prop = update_notification_prop(notification_prop, "profile picture updated")
             success_message = "Your profile photo was updated."
 
         # ---- Username ----
         if username is not None:
+            old_username = user_obj.username
             user_obj.username = username
+
+            UUID_INDEX.rename(old_username= old_username, new_username= username)
+
+            notification_prop = update_notification_prop(notification_prop, f"Username updated: @{old_username} -> @{username}")
             success_message = f"Your username has been updated to @{username}."
 
         # ---- Public/private ----
@@ -231,17 +251,29 @@ async def update_user_preferences(user_uuid: str, request: Request):
             if parsed_public is None:
                 return {"error": "Invalid value for is_public."}
             user_obj.is_public = parsed_public
+
+            notification_prop = update_notification_prop(notification_prop, f"Public status updated: {'Public' if parsed_public else 'Private'}")
             success_message = f"Your account type has been set to {'Public' if parsed_public else 'Private'}."
 
         # ---- Message preferences ----
         if message_preferences is not None:
             try:
+                old_message_preferences = user_obj.message_preferences
                 user_obj.update_message_preferences(message_preferences)
+                notification_prop = update_notification_prop(notification_prop, f"Message preferences updated: {old_message_preferences.value} -> {user_obj.message_preferences.value}")
                 success_message = "Your message preferences have been updated."
             except ValueError as ve:
                 return {"error": str(ve)}
 
+        print(notification_prop)
+        if len(notification_prop) > 0:
+            print("ADDING NOTIFICATION")
+            user_obj.add_notification(f"Updated Profile: {notification_prop}", "update")
+            print("ADDED NOTIFICATION")
+
         USER_MANAGER.save()
+        if username is not None: UUID_INDEX.save()
+
 
         payload = {"message": success_message}
         if getattr(user_obj, "profile_picture", None):
@@ -305,7 +337,7 @@ async def get_user_notifications(user_uuid: str, request: Request):
     return user_obj.notifications
 
 @router.get('/profiles/')
-async def get_user_profile(target_profile_uuid: str | None = Query(None), target_profile_username: str | None = Query(None), viewer_uuid: str | None = Query(None)):
+async def get_user_profile(request: Request, target_profile_uuid: str | None = Query(None), target_profile_username: str | None = Query(None), viewer_uuid: str | None = Query(None)):
     if target_profile_uuid is None and target_profile_username is None:
         return {"error": "Must provide either target_profile_uuid or target_profile_username."}
 
@@ -319,19 +351,42 @@ async def get_user_profile(target_profile_uuid: str | None = Query(None), target
     if not target_status or target_obj is None:
         return {"error": "Target user not found."}
 
-    viewer_status, viewer_obj = find_user(viewer_uuid)
-    if not viewer_status or viewer_obj is None:
-        return {"error": "Viewer user not found."}
+    if viewer_uuid != "null":
+        viewer_status, viewer_obj = find_user(viewer_uuid)
+        if not viewer_status or viewer_obj is None:
+            return {"error": "Viewer user not found."}
 
-    is_blocked_by_user = viewer_obj.id in target_obj.blocked_users
-    viewer_blocked_user = target_obj.id in viewer_obj.blocked_users
+        is_self = viewer_obj.id == target_obj.id
+        viewer_follows_user = viewer_obj.id in target_obj.followers
+        user_follows_viewer = target_obj.id in viewer_obj.followers
+        pending_follow_request = viewer_obj.id in target_obj.follow_requests
+        is_blocked_by_user = viewer_obj.id in target_obj.blocked_users
+        viewer_blocked_user = target_obj.id in viewer_obj.blocked_users
+
+        can_view_profile = True if not (is_blocked_by_user or viewer_blocked_user) else False
+        can_follow = True if not is_blocked_by_user else False
+
+    else:
+        is_self = viewer_uuid == target_obj.id
+        viewer_follows_user = False
+        user_follows_viewer = False
+        pending_follow_request = False
+        is_blocked_by_user = False
+        viewer_blocked_user = False
+
+        can_view_profile = True
+        can_follow = True
 
     can_message = True if not target_obj.message_preferences.value == "NONE" else False
 
-    return {
+    follower_count = format_count(len(target_obj.followers))
+
+    following_count = format_count(len(target_obj.following))
+
+    user_summary = {
         "id": target_obj.id,
         "username": target_obj.username,
-        "avatar": target_obj.profile_picture,
+        "profilePicture": target_obj.profile_picture,
         "publicStatus": target_obj.is_public,
 
         "stats": {
@@ -340,20 +395,28 @@ async def get_user_profile(target_profile_uuid: str | None = Query(None), target
         },
 
         "relations": {
-            "isSelf": target_obj.id == viewer_obj.id,
-            "viewerFollowsUser": viewer_obj.id in target_obj.followers,
-            "userFollowsViewer": target_obj.id in viewer_obj.followers,
-            "pendingFollowRequest": viewer_obj.id in target_obj.follow_requests,
+            "isSelf": is_self,
+            "viewerFollowsUser": viewer_follows_user,
+            "userFollowsViewer": user_follows_viewer,
+            "pendingFollowRequest": pending_follow_request,
             "isBlockedByUser": is_blocked_by_user,
             "viewerBlockedUser": viewer_blocked_user,
         },
 
         "permissions": {
-            "canViewProfile": True if not (is_blocked_by_user or viewer_blocked_user) else False,
+            "canViewProfile": can_view_profile,
             "canMessage": can_message,
-            "canFollow": True if not is_blocked_by_user else False,
+            "canFollow": can_follow,
         }
     }
+
+    pp = user_summary.get("profilePicture")
+    if pp:
+        if pp.startswith("/media/"):
+            pp = pp.replace("/media/", "", 1)
+        user_summary["profilePicture"] = str(request.url_for("media", path=pp))
+
+    return user_summary
 
 @router.post('/{user_uuid}/follow')
 async def follow_user(user_uuid: str, request: Request):
@@ -400,6 +463,10 @@ async def follow_user(user_uuid: str, request: Request):
         "uuid": target_id
     })
 
+    target_user_obj.add_notification(target_message, "profile", {
+        "uuid": follower_id
+    })
+
     USER_MANAGER.save()
 
     return {
@@ -410,14 +477,6 @@ async def follow_user(user_uuid: str, request: Request):
             "function": "toProfile",
             "uuid": follower_id,
             "message": target_message,
-        },
-        "backend_notification_payload": {
-            "message": target_message,
-            "notification_type": "profile",
-            "extra": {
-                "uuid": follower_id,
-                "function": "toProfile",
-            }
         }
     }
 }
@@ -481,11 +540,116 @@ async def cancel_follow_request(user_uuid: str, request: Request):
     if not request_sender_status or request_sender_user_obj is None:
         return {"error": "Request sender user not found."}
 
-    if target_id not in request_sender_user_obj.follow_requests:
+    if request_sender_id not in target_user_obj.follow_requests:
         return {"error": f"You have no pending follow request to @{target_user_obj.username}."}
 
-    request_sender_user_obj.follow_requests.remove(target_id)
+    target_user_obj.follow_requests.remove(request_sender_id)
+    USER_MANAGER.save()
 
     return {
         "message": f"You have cancelled your follow request to @{target_user_obj.username}."
+    }
+
+@router.get('/{user_uuid}/follow_requests')
+async def get_follow_requests(user_uuid: str, request: Request):
+    user_status, user_obj = find_user(user_uuid)
+    if not user_status or user_obj is None:
+        return {"error": "User not found."}
+
+    follow_requests = []
+    user_follow_requests_ids_list = list(user_obj.follow_requests)
+
+    for follow_request_id in user_follow_requests_ids_list:
+        follow_request_status, follow_request_obj = find_user(follow_request_id)
+        if not follow_request_status or follow_request_obj is None: continue
+        user_info = follow_request_obj.essentials_to_dict()
+        pp = user_info.get("profilePicture")
+        if pp:
+            if pp.startswith("/media/"):
+                pp = pp.replace("/media/", "", 1)
+            user_info["profilePicture"] = str(request.url_for("media", path=pp))
+        follow_requests.append(user_info)
+
+    return follow_requests
+
+@router.post('/{user_uuid}/follow_requests')
+async def accept_follow_request(user_uuid: str, request: Request):
+    data = await request.json()
+    target_id = data.get('target_id')
+    follower_id = data.get('follower_id')
+
+    if not target_id or not follower_id:
+        return {"error": "target_id and follower_id are required."}
+
+    if target_id != user_uuid:
+        return {"error": f"target_id must match the authenticated user {user_uuid}."}
+
+    target_status, target_user_obj = find_user(target_id)
+    if not target_status or target_user_obj is None:
+        return {"error": "Target user not found."}
+
+    follower_status, follower_obj = find_user(follower_id)
+    if not follower_status or follower_obj is None:
+        return {"error": "Request sender user not found."}
+
+    if follower_id not in target_user_obj.follow_requests:
+        return {"error": f"You have no pending follow request to @{target_user_obj.username}."}
+
+    target_user_obj.followers.add(follower_id)
+    target_user_obj.follow_requests.remove(follower_id)
+    follower_obj.following.add(target_id)
+
+    target_success_message = f"You accepted @{target_user_obj.username}'s follow request."
+    follower_success_message = f"@{target_user_obj.username} has accepted your follow request."
+
+    target_user_obj.add_notification(target_success_message, "profile", {
+        "uuid": follower_id
+    })
+
+    follower_obj.add_notification(follower_success_message, "profile", {
+        "uuid": target_id
+    })
+
+    USER_MANAGER.save()
+
+    return {
+        "message": target_success_message,
+        "notificationForRecipient": {
+            "recipient_uuid": follower_id,
+            "frontend_notification_payload": {
+                "function": "toProfile",
+                "uuid": target_id,
+                "message": follower_success_message,
+            }
+        }
+    }
+
+@router.delete('/{user_uuid}/follow_requests')
+async def decline_follow_request(user_uuid: str, request: Request):
+    data = await request.json()
+    target_id = data.get('target_id')
+    follower_id = data.get('follower_id')
+
+    if not target_id or not follower_id:
+        return {"error": "target_id and follower_id are required."}
+
+    if target_id != user_uuid:
+        return {"error": f"target_id must match the authenticated user {user_uuid}."}
+
+    target_status, target_user_obj = find_user(target_id)
+    if not target_status or target_user_obj is None:
+        return {"error": "Target user not found."}
+
+    follower_status, follower_obj = find_user(follower_id)
+    if not follower_status or follower_obj is None:
+        return {"error": "Request sender user not found."}
+
+    if follower_id not in target_user_obj.follow_requests:
+        return {"error": f"You have no pending follow request to @{target_user_obj.username}."}
+
+    target_user_obj.follow_requests.remove(follower_id)
+    USER_MANAGER.save()
+
+    return {
+        "message": f"You declined @{target_user_obj.username}'s follow request."
     }
