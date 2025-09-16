@@ -4,6 +4,7 @@ from fastapi import APIRouter
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from backend.instances import CHAT_MANAGER
+from backend.pydantic_models.pydantic_variables import ChatId, UserUUID
 
 from backend.utils.user_utils import find_user, user_uuid_to_username
 from backend.utils.chat_utils import create_chat, find_direct_chat_with_user, add_user_to_chat, find_chat
@@ -14,10 +15,7 @@ from random import randint
 
 router = APIRouter()
 
-ChatId = Annotated[str, "chat_id"]
-UserUUID = Annotated[str, "user_uuid"]
-
-active_user_connections: Dict[str, WebSocket] = {}
+active_user_connections: Dict[UserUUID, WebSocket] = {}
 active_chat_connections: Dict[ChatId, Dict[UserUUID, WebSocket]] = {}
 
 async def add_user_to_active_connections(user_uuid: UserUUID, websocket: WebSocket) -> None:

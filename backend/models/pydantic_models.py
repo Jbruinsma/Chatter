@@ -2,36 +2,38 @@ from __future__ import annotations
 from pydantic import BaseModel
 from typing import Dict
 
+from backend.pydantic_models.pydantic_variables import UserUUID, FollowingCount, FollowerCount
+
 
 class ErrorMessage(BaseModel):
     error: str
 
 class EssentialInfo(BaseModel):
-    id: str
+    id: UserUUID
     username: str
-    profilePicture: str
+    profilePicture: str | None
     publicStatus: bool
 
 class Settings(BaseModel):
-    id: str
+    id: UserUUID
     notificationPreferences: Dict[str, bool]
-    profilePicture: str
+    profilePicture: str | None
     username: str
     isPublic: bool
     messagePreferences: str
 
 class Profile(BaseModel):
-    id: str
+    id: UserUUID
     username: str
-    profilePicture: str
+    profilePicture: str | None
     publicStatus: bool
     stats: Stats
     relations: Relations
     permissions: Permissions
 
 class Stats(BaseModel):
-    followersCount: int
-    followingCount: int
+    followersCount: FollowerCount
+    followingCount: FollowingCount
 
 class Relations(BaseModel):
     isSelf: bool

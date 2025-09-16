@@ -3,6 +3,8 @@ from typing import Optional, Callable, Tuple, Literal
 import threading
 
 from backend.instances import CHAT_MANAGER, USER_MANAGER, DIRECT_CHAT_INDEX_MANAGER
+from backend.models.chat import Chat
+from backend.pydantic_models.pydantic_variables import ChatId
 from backend.utils.user_utils import find_user
 
 Category = Literal["main", "requests", "deny"]
@@ -22,7 +24,7 @@ def create_chat(
     participant_ids: set[str],
     participant_permissions: dict[str, dict[str, bool | str]],
     chat_type: Optional[str] = None
-) -> Tuple[str, object]:
+) -> Tuple[ChatId, Chat]:
 
     owner_status, owner_obj = find_user(owner_id)
     if not owner_status or owner_obj is None:

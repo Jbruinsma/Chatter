@@ -7,6 +7,7 @@ from typing import Dict, Any
 
 from backend.instances import UUID_INDEX, USER_MANAGER
 from backend.models.user import User
+from backend.pydantic_models.pydantic_variables import FollowerCount, FollowingCount
 from backend.utils.user_utils import find_user, format_pfp_link
 from backend.utils.formatting import format_count
 
@@ -351,7 +352,7 @@ async def get_user_profile(request: Request, target_profile_uuid: str | None = Q
 
     if target_profile_username is not None:
         try:
-            target_profile_uuid = UUID_INDEX[target_profile_username]
+            target_profile_uuid: str = UUID_INDEX[target_profile_username]
         except KeyError:
             return ErrorMessage(error= f"User @{target_profile_username} not found.")
 
@@ -364,31 +365,31 @@ async def get_user_profile(request: Request, target_profile_uuid: str | None = Q
         if not viewer_status or viewer_obj is None:
             return ErrorMessage(error= "Viewer user not found.")
 
-        is_self = viewer_obj.id == target_obj.id
-        viewer_follows_user = viewer_obj.id in target_obj.followers
-        user_follows_viewer = target_obj.id in viewer_obj.followers
-        pending_follow_request = viewer_obj.id in target_obj.follow_requests
-        is_blocked_by_user = viewer_obj.id in target_obj.blocked_users
-        viewer_blocked_user = target_obj.id in viewer_obj.blocked_users
+        is_self: bool = viewer_obj.id == target_obj.id
+        viewer_follows_user: bool = viewer_obj.id in target_obj.followers
+        user_follows_viewer: bool = target_obj.id in viewer_obj.followers
+        pending_follow_request: bool = viewer_obj.id in target_obj.follow_requests
+        is_blocked_by_user: bool = viewer_obj.id in target_obj.blocked_users
+        viewer_blocked_user: bool = target_obj.id in viewer_obj.blocked_users
 
-        can_view_profile = True if not (is_blocked_by_user or viewer_blocked_user) else False
-        can_follow = True if not is_blocked_by_user else False
+        can_view_profile: bool = True if not (is_blocked_by_user or viewer_blocked_user) else False
+        can_follow: bool = True if not is_blocked_by_user else False
 
     else:
-        is_self = viewer_uuid == target_obj.id
-        viewer_follows_user = False
-        user_follows_viewer = False
-        pending_follow_request = False
-        is_blocked_by_user = False
-        viewer_blocked_user = False
+        is_self: bool = viewer_uuid == target_obj.id
+        viewer_follows_user: bool = False
+        user_follows_viewer: bool = False
+        pending_follow_request: bool = False
+        is_blocked_by_user: bool = False
+        viewer_blocked_user: bool = False
 
-        can_view_profile = True
-        can_follow = True
+        can_view_profile: bool = True
+        can_follow: bool = True
 
-    can_message = True if not target_obj.message_preferences.value == "NONE" else False
+    can_message: bool = True if not target_obj.message_preferences.value == "NONE" else False
 
-    follower_count = format_count(len(target_obj.followers))
-    following_count = format_count(len(target_obj.following))
+    follower_count: FollowerCount = format_count(len(target_obj.followers))
+    following_count: FollowingCount = format_count(len(target_obj.following))
 
     return Profile(
         id= target_obj.id,

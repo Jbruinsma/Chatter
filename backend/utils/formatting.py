@@ -1,6 +1,8 @@
 from typing import Any, Dict, Union
 from datetime import datetime, timezone
 
+from backend.pydantic_models.pydantic_variables import FollowerCount, FollowingCount
+
 TimeLike = Union[datetime, str, int, float]
 
 def _to_iso8601_z(value: TimeLike) -> str:
@@ -63,7 +65,7 @@ def format_notification_timestamp() -> str:
         return dt.astimezone(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
     return dt.isoformat(timespec="milliseconds")
 
-def format_count(count: int) -> str:
+def format_count(count: int) -> FollowerCount | FollowingCount:
     if count >= 10000:
         return f"{count // 1000}K"
     elif count >= 1000000:
