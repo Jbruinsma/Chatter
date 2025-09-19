@@ -3,7 +3,7 @@ from pathlib import Path
 import uuid
 import json
 import mimetypes
-from typing import Dict, Any
+from typing import Dict, Any, Coroutine
 
 from backend.instances import UUID_INDEX, USER_MANAGER
 from backend.models.user import User
@@ -128,9 +128,9 @@ async def register(request: Request):
 
 
 @router.get('/')
-async def get_user(user_uuid: str | None = Query(None), username: str | None = Query(None)) -> Dict[str, Any]:
-    error_message: "User not found."
+async def get_user(user_uuid: str | None = Query(None), username: str | None = Query(None)) -> ErrorMessage | Any:
     try:
+        error_message: str = "User not found."
         if user_uuid is None and username is None:
             return ErrorMessage(error= "Must provide either user_uuid or username.")
         if username is not None:
