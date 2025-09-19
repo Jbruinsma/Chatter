@@ -1,3 +1,5 @@
+USE chatter;
+
 DELIMITER //
 
 CREATE PROCEDURE  register_user (
