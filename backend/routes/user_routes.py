@@ -91,14 +91,19 @@ async def login(login_data: LoginData, database_session: AsyncSession = Depends(
     valid_password_attempt, essential_user_info = await check_password(database_session, password, username= username)
 
     if valid_password_attempt:
-        notification_preferences: NotificationPreferences = await retrieve_user_notification_preferences(database_session, user_username= username)
 
-        return SuccessfulLoginMessage(
-            message= "Login successful.",
-            id= essential_user_info.get('id'),
-            username= username,
-            notificationPreferences= notification_preferences
-        )
+        try:
+            notification_preferences: NotificationPreferences = await retrieve_user_notification_preferences(database_session, user_username= username)
+
+            return SuccessfulLoginMessage(
+                message= "Login successful.",
+                id= essential_user_info.get('id'),
+                username= username,
+                notificationPreferences= notification_preferences
+            )
+
+        except Exception as e:
+            pass
 
     return ErrorMessage(
         error= error_message
