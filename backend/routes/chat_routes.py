@@ -1,8 +1,13 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Request
+from fastapi import APIRouter, UploadFile, File, HTTPException, Request, Depends
 from pathlib import Path
 import uuid, os
 
-from backend.utils.chat_utils import find_chat, find_direct_chat_with_user
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.database import get_session
+from backend.models.pydantic_models import ErrorMessage
+from backend.procedures import check_if_user_exists
+from backend.utils.chat_utils import find_chat, find_direct_chat_with_user, retrieve_chat_ids
 from backend.utils.user_utils import find_user
 from backend.utils.media import normalize_chat_media
 
@@ -13,32 +18,41 @@ MAX_BYTES = 5 * 1024 * 1024  # 5 MB
 
 
 @router.get("/{user_uuid}")
-async def get_all_chats(user_uuid: str, request: Request):
-    def get_chat_overview(chat_id: str):
-        chat_status, chat_obj = find_chat(chat_id)
-        if chat_status and chat_obj is not None:
-            raw = chat_obj.to_dict(viewer_uuid=user_uuid)
-            return normalize_chat_media(request, raw)
-        return None
+async def get_all_chats(user_uuid: str, request: Request, database_session: AsyncSession = Depends(get_session)):
 
-    try:
-        user_status, user_obj = find_user(user_uuid)
-        if not user_status or user_obj is None:
-            return {"error": "User not found."}
+    user_status = await check_if_user_exists(database_session, user_id= user_uuid)
+    if not user_status:
+        return ErrorMessage(error= f"User ({user_uuid}) does not exist.")
 
-        user_main_chat_ids = list(user_obj.chat_ids.get("main", []))
-        user_request_chat_ids = list(user_obj.chat_ids.get("requests", []))
+    user_chat_ids = await retrieve_chat_ids(database_session, user_id= user_uuid)
 
-        chat_overviews = {
-            "main":     [c for c in (get_chat_overview(cid) for cid in user_main_chat_ids) if c is not None],
-            "requests": [c for c in (get_chat_overview(cid) for cid in user_request_chat_ids) if c is not None],
-        }
+    print("CHAT IDS:", user_chat_ids)
 
-        return {"chats": chat_overviews}
-
-    except Exception as e:
-        print(f"Error fetching chats: {e}")
-        return {"chats": {"main": [], "requests": []}, "error": "Error fetching chats. Try again later."}
+    # def get_chat_overview(chat_id: str):
+    #     chat_status, chat_obj = find_chat(chat_id)
+    #     if chat_status and chat_obj is not None:
+    #         raw = chat_obj.to_dict(viewer_uuid=user_uuid)
+    #         return normalize_chat_media(request, raw)
+    #     return None
+    #
+    # try:
+    #     user_status, user_obj = find_user(user_uuid)
+    #     if not user_status or user_obj is None:
+    #         return {"error": "User not found."}
+    #
+    #     user_main_chat_ids = list(user_obj.chat_ids.get("main", []))
+    #     user_request_chat_ids = list(user_obj.chat_ids.get("requests", []))
+    #
+    #     chat_overviews = {
+    #         "main":     [c for c in (get_chat_overview(cid) for cid in user_main_chat_ids) if c is not None],
+    #         "requests": [c for c in (get_chat_overview(cid) for cid in user_request_chat_ids) if c is not None],
+    #     }
+    #
+    #     return {"chats": chat_overviews}
+    #
+    # except Exception as e:
+    #     print(f"Error fetching chats: {e}")
+    #     return {"chats": {"main": [], "requests": []}, "error": "Error fetching chats. Try again later."}
 
 
 @router.get("/{user_uuid}/{chat_id}")

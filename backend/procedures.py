@@ -1,3 +1,5 @@
+from typing import List
+
 from sqlalchemy.ext.asyncio.session import AsyncSession
 from sqlalchemy.sql import text
 
@@ -70,3 +72,25 @@ async def retrieve_essential_user_info(session: AsyncSession, user_id: str =None
             "isPublic": row[2],
         }
     raise Exception(f"User (ID): {user_id}, (Username): {user_username} not found.")
+
+async def _fetch_ids_from_procedure(session: AsyncSession, procedure_name: str, user_id: str | None = None, user_username: str | None = None) -> List[str]:
+    if not user_id and not user_username:
+        raise ValueError("Must provide either user_id or user_username.")
+
+    sql = text(f"CALL {procedure_name}(:target_user_id, :target_user_username)")
+    result = await session.execute(sql, {
+        "target_user_id": user_id,
+        "target_user_username": user_username
+    })
+    return list(result.first() or [])
+
+async def retrieve_user_main_chat_ids(session: AsyncSession, user_id: str | None = None, user_username: str | None = None) -> List[str]:
+    return await _fetch_ids_from_procedure(
+        session, "retrieve_main_chat_ids", user_id, user_username
+    )
+
+
+async def retrieve_user_chat_requests(session: AsyncSession, user_id: str | None = None, user_username: str | None = None) -> List[str]:
+    return await _fetch_ids_from_procedure(
+        session, "retrieve_request_chat_ids", user_id, user_username
+    )

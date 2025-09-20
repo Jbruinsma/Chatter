@@ -2,13 +2,25 @@ from types import new_class
 from typing import Optional, Callable, Tuple, Literal
 import threading
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from backend.instances import CHAT_MANAGER, USER_MANAGER, DIRECT_CHAT_INDEX_MANAGER
 from backend.models.chat import Chat
+from backend.procedures import retrieve_user_main_chat_ids, retrieve_user_chat_requests
 from backend.pydantic_models.pydantic_variables import ChatId
 from backend.utils.user_utils import find_user
 
 Category = Literal["main", "requests", "deny"]
 
+
+async def retrieve_chat_ids(session: AsyncSession, user_id: str =None, user_username: str =None) -> dict:
+    if not user_id and not user_username:
+        raise Exception("Must provide either user_id or user_username.")
+
+    return {
+        "main": await retrieve_user_main_chat_ids(session, user_id, user_username),
+        "requests": await retrieve_user_chat_requests(session, user_id, user_username)
+    }
 
 def find_chat(chat_id):
     chat_node = CHAT_MANAGER.search_for_chat(chat_id)
