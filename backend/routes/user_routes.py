@@ -18,8 +18,7 @@ from backend.models.user import User
 from backend.models.user_registration import UserRegistration
 from backend.procedures import register_user_procedure, check_if_user_exists, retrieve_user_notification_preferences
 from backend.pydantic_models.pydantic_variables import FollowerCount, FollowingCount
-from backend.utils.database_utils import check_password
-from backend.utils.user_utils import find_user, format_pfp_link
+from backend.utils.user_utils import find_user, format_pfp_link, check_password
 from backend.utils.formatting import format_count
 
 from backend.models.pydantic_models import (
@@ -75,6 +74,15 @@ async def _save_upload(file: UploadFile, dest: Path, max_bytes: int = MAX_UPLOAD
     await file.close()
     print(f"[avatar] saved {size} bytes -> {dest}")
 
+async def send_login_success(database_session: AsyncSession, user_id: str, user_username: str, message: str) -> SuccessfulLoginMessage:
+    notification_preferences: NotificationPreferences = await retrieve_user_notification_preferences(database_session, user_username= user_username)
+    return SuccessfulLoginMessage(
+        message= message,
+        id= user_id,
+        username= user_username,
+        notificationPreferences=notification_preferences
+    )
+
 
 @router.post('/login')
 async def login(login_data: LoginData, database_session: AsyncSession = Depends(get_session)) -> ErrorMessage | SuccessfulLoginMessage:
@@ -93,17 +101,13 @@ async def login(login_data: LoginData, database_session: AsyncSession = Depends(
     if valid_password_attempt:
 
         try:
-            notification_preferences: NotificationPreferences = await retrieve_user_notification_preferences(database_session, user_username= username)
-
-            return SuccessfulLoginMessage(
-                message= "Login successful.",
-                id= essential_user_info.get('id'),
-                username= username,
-                notificationPreferences= notification_preferences
+            return await send_login_success(
+                database_session= database_session,
+                user_id= essential_user_info["id"],
+                user_username= username,
+                message= "Login successful."
             )
-
-        except Exception as e:
-            pass
+        except Exception as e: pass
 
     return ErrorMessage(
         error= error_message
@@ -131,15 +135,12 @@ async def register(user_data: UserRegistration, database_session: AsyncSession =
 
     try:
         await register_user_procedure(database_session, data_for_procedure)
-        notification_preferences: NotificationPreferences = await retrieve_user_notification_preferences(database_session, user_username= username)
-
-        return SuccessfulLoginMessage(
-            message= "Registration successful.",
-            id= new_uuid,
-            username= username,
-            notificationPreferences= notification_preferences
+        return await send_login_success(
+            database_session= database_session,
+            user_id= new_uuid,
+            user_username= username,
+            message= "Registration successful."
         )
-
     except Exception as e:
         return ErrorMessage(error= "User registration failed: " + str(e))
 

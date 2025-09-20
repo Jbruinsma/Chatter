@@ -1,9 +1,7 @@
 from sqlalchemy.ext.asyncio.session import AsyncSession
 from sqlalchemy.sql import text
-from sqlmodel import select
 
 from backend.models.notification_preferences import NotificationPreferences
-from backend.models.sql_models import User
 
 
 async def register_user_procedure(session: AsyncSession, user_data: dict) -> None:

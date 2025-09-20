@@ -1,9 +1,12 @@
 from typing import Annotated, Dict
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
+from backend.database import get_session
 from backend.instances import CHAT_MANAGER
+from backend.procedures import check_if_user_exists
 from backend.pydantic_models.pydantic_variables import ChatId, UserUUID
 
 from backend.utils.user_utils import find_user, user_uuid_to_username
@@ -18,10 +21,10 @@ router = APIRouter()
 active_user_connections: Dict[UserUUID, WebSocket] = {}
 active_chat_connections: Dict[ChatId, Dict[UserUUID, WebSocket]] = {}
 
-async def add_user_to_active_connections(user_uuid: UserUUID, websocket: WebSocket) -> None:
+def add_user_to_active_connections(user_uuid: UserUUID, websocket: WebSocket) -> None:
     active_user_connections[user_uuid] = websocket
 
-async def remove_user_from_active_connections(user_uuid: str):
+def remove_user_from_active_connections(user_uuid: str):
     active_user_connections.pop(user_uuid, None)
 
 async def attach_user_to_chat(chat_id: ChatId, user_uuid: UserUUID) -> None:
@@ -596,20 +599,20 @@ async def broadcast_to_user_out_of_chat(user_uuid: UserUUID, payload: dict):
             pass
 
 @router.websocket('/{user_uuid}')
-async def websocket_endpoint(websocket: WebSocket, user_uuid: UserUUID):
-    user_status, user_obj = find_user(user_uuid)
+async def websocket_endpoint(websocket: WebSocket, user_uuid: UserUUID, database_session: AsyncSession = Depends(get_session)):
+    user_status = await check_if_user_exists(user_uuid)
 
-    if not user_status or user_obj is None:
+    if not user_status:
         await websocket.close(1008, "User does not exist.")
         return
 
     await websocket.accept()
-    await add_user_to_active_connections(user_uuid, websocket)
+    add_user_to_active_connections(user_uuid, websocket)
 
-    user_chat_ids = list(user_obj.chat_ids.get("main", set()) | user_obj.chat_ids.get("requests", set()))
-
-    for chat_id in user_chat_ids:
-        await attach_user_to_chat(chat_id, user_uuid)
+    # user_chat_ids = list(user_obj.chat_ids.get("main", set()) | user_obj.chat_ids.get("requests", set()))
+    #
+    # for chat_id in user_chat_ids:
+    #     await attach_user_to_chat(chat_id, user_uuid)
 
     try:
 
@@ -679,7 +682,7 @@ async def websocket_endpoint(websocket: WebSocket, user_uuid: UserUUID):
                 await send_websocket_error(websocket, operation or "unknown", "unsupported_operation", "Unsupported operation")
 
     finally:
-        await remove_user_from_active_connections(user_uuid)
+        remove_user_from_active_connections(user_uuid)
         for chat_id, chat_map in list(active_chat_connections.items()):
             if user_uuid in chat_map:
                 chat_map.pop(user_uuid, None)
