@@ -5,11 +5,16 @@ from pathlib import Path
 import os
 import socket
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
 
-from backend.instances import USER_MANAGER, CHAT_MANAGER, UUID_INDEX, DIRECT_CHAT_INDEX_MANAGER
+# Import the async database function needed during startup
+from backend.database import create_db_and_tables
+
+# Import managers and routes
 from backend.routes import user_routes, chat_routes, websocket
 
-# ---------- Paths ----------
+
+# ---------- Directories ----------
 APP_ROOT = Path(__file__).resolve().parent
 MEDIA_DIR = APP_ROOT / "media"
 AVATAR_DIR = MEDIA_DIR / "avatars"
@@ -22,6 +27,8 @@ VITE_PORT = os.getenv("VITE_PORT", "5173")  # only used for logging text
 # Dev-friendly: allow any http/https origin + optional port (works with credentials).
 # Tighten this for production.
 ALLOW_ORIGIN_REGEX = r"^https?://[^/]+(?::\d{2,5})?$"
+
+load_dotenv()
 
 
 def get_lan_ip(default: str = "127.0.0.1") -> str:
@@ -40,46 +47,30 @@ def get_lan_ip(default: str = "127.0.0.1") -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # --- One-time startup tasks ---
+    print("Ensuring media directories exist...")
     MEDIA_DIR.mkdir(parents=True, exist_ok=True)
     AVATAR_DIR.mkdir(parents=True, exist_ok=True)
     CHAT_COVER_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Create database and tables using the imported async function
+    print("Creating database and tables if they don't exist...")
+    await create_db_and_tables()  # <-- The key change is here
+
     print(f"[startup] MEDIA_DIR: {MEDIA_DIR}")
     print(f"[startup] AVATAR_DIR: {AVATAR_DIR}")
     print(f"[startup] CHAT_COVER_DIR: {CHAT_COVER_DIR}")
-
-    if not os.path.exists("user_manager.pkl"):
-        print("Creating user_manager.pkl...")
-        USER_MANAGER.save()
-    if not os.path.exists("chat_manager.pkl"):
-        print("Creating chat_manager.pkl...")
-        CHAT_MANAGER.save_chat_database()
-    if not os.path.exists(UUID_INDEX.path):
-        UUID_INDEX.save()
-    UUID_INDEX.load()
-
-    if not os.path.exists("direct_index.pkl"):
-        print("Building direct_index.pkl from existing chats...")
-        def iter_chats():
-            for chat in CHAT_MANAGER.iterate_all():
-                yield chat
-        DIRECT_CHAT_INDEX_MANAGER.rebuild_from_chats(iter_chats())
+    print("Startup complete. Application is ready.")
 
     yield
 
-    # --- Graceful shutdown tasks ---
-    print("Saving all AVL trees before shutdown...")
-    USER_MANAGER.save()
-    CHAT_MANAGER.save_chat_database()
-    UUID_INDEX.save()
-    print("Data saved.")
-
+    # --- Graceful shutdown tasks can be added here if needed ---
+    print("Application shutting down.")
 
 app = FastAPI(title="Chat App", lifespan=lifespan)
 
+
 # ---------- CORS ----------
-# Allows your Vue app (opened via localhost or a LAN/public IP) to call this API during development.
-# This regex-based approach works with allow_credentials=True.
+# Allows your Vue app to call this API during development.
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=ALLOW_ORIGIN_REGEX,

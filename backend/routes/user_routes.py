@@ -1,13 +1,24 @@
-from fastapi import APIRouter, Request, Query, HTTPException, UploadFile
+import bcrypt
+from fastapi import APIRouter, Request, Query, HTTPException, UploadFile, Depends
 from pathlib import Path
 import uuid
 import json
 import mimetypes
 from typing import Dict, Any, Coroutine
 
+from sqlalchemy.ext.asyncio.session import AsyncSession
+from sqlalchemy.orm.session import Session
+
+from backend.database import get_session
 from backend.instances import UUID_INDEX, USER_MANAGER
+from backend.models.login_data import LoginData
+from backend.models.notification_preferences import NotificationPreferences
+from backend.models.successful_login_message import SuccessfulLoginMessage
 from backend.models.user import User
+from backend.models.user_registration import UserRegistration
+from backend.procedures import register_user_procedure, check_if_user_exists, retrieve_user_notification_preferences
 from backend.pydantic_models.pydantic_variables import FollowerCount, FollowingCount
+from backend.utils.database_utils import check_password
 from backend.utils.user_utils import find_user, format_pfp_link
 from backend.utils.formatting import format_count
 
@@ -66,71 +77,71 @@ async def _save_upload(file: UploadFile, dest: Path, max_bytes: int = MAX_UPLOAD
 
 
 @router.post('/login')
-async def login(request: Request):
-    error_message = "Username or password is Invalid."
-    data = await request.json()
-    username = data.get('username')
-    password = data.get('password')
-
-    if not username or not password:
+async def login(login_data: LoginData, database_session: AsyncSession = Depends(get_session)) -> ErrorMessage | SuccessfulLoginMessage:
+    if not login_data:
         return ErrorMessage(error= "Username and password are required.")
 
-    try:
-        user_uuid = UUID_INDEX[username]
-    except KeyError:
+    error_message: str = "Invalid username or password."
+    username = login_data.username
+    password = login_data.password
+
+    if not await check_if_user_exists(database_session, user_username= username):
         return ErrorMessage(error= error_message)
 
-    if user_uuid is not None:
-        user_status, user_obj = find_user(user_uuid)
-        if not user_status or user_obj is None:
-            return ErrorMessage(error= error_message)
+    valid_password_attempt, essential_user_info = await check_password(database_session, password, username= username)
 
-        correct_password = user_obj.check_password(password)
-        if not correct_password:
-            return ErrorMessage(error= error_message)
-        else:
-            return {
-                "message": "Login successful.",
-                "id": user_uuid,
-                "username": username,
-                "notificationPreferences": user_obj.allow_notifications,
-            }
-    return ErrorMessage(error= error_message)
+    if valid_password_attempt:
+        notification_preferences: NotificationPreferences = await retrieve_user_notification_preferences(database_session, user_username= username)
+
+        return SuccessfulLoginMessage(
+            message= "Login successful.",
+            id= essential_user_info.get('id'),
+            username= username,
+            notificationPreferences= notification_preferences
+        )
+
+    return ErrorMessage(
+        error= error_message
+    )
 
 @router.post('/register')
-async def register(request: Request):
-    data = await request.json()
-    username = data.get('username')
-    password = data.get('password')
-    is_public = data.get('is_public')
-
-    if not username or not password:
+async def register(user_data: UserRegistration, database_session: AsyncSession = Depends(get_session)) -> ErrorMessage | SuccessfulLoginMessage:
+    if not user_data:
         return ErrorMessage(error= "Username and password are required.")
 
-    if username in UUID_INDEX:
-        return ErrorMessage(error= f"Username @'{username}' already exists.")
+    username = user_data.username
 
-    UUID_INDEX[username] = str(uuid.uuid4())
-    new_user_uuid = UUID_INDEX[username]
-    new_user = User(uuid=new_user_uuid, username=username, password=password, is_public=is_public)
+    if await check_if_user_exists(database_session, user_username= username):
+        return ErrorMessage(error= "Username already exists.")
 
-    new_user.add_notification(f"Welcome @{username}! You are now registered.", "success")
+    new_uuid = str(uuid.uuid4())
+    hashed_password = bcrypt.hashpw(user_data.password.encode(), bcrypt.gensalt())
 
-    USER_MANAGER.add_user(new_user_uuid, new_user)
-    USER_MANAGER.save()
-
-    return {
-        "message": "Registration successful.",
-        "id": new_user_uuid,
+    data_for_procedure = {
+        "user_id": new_uuid,
         "username": username,
-        "notificationPreferences": new_user.allow_notifications,
+        "password": hashed_password,
+        "is_public": user_data.is_public,
     }
 
+    try:
+        await register_user_procedure(database_session, data_for_procedure)
+        notification_preferences: NotificationPreferences = await retrieve_user_notification_preferences(database_session, user_username= username)
+
+        return SuccessfulLoginMessage(
+            message= "Registration successful.",
+            id= new_uuid,
+            username= username,
+            notificationPreferences= notification_preferences
+        )
+
+    except Exception as e:
+        return ErrorMessage(error= "User registration failed: " + str(e))
 
 @router.get('/')
 async def get_user(user_uuid: str | None = Query(None), username: str | None = Query(None)) -> ErrorMessage | Any:
+    error_message: str = "User not found."
     try:
-        error_message: str = "User not found."
         if user_uuid is None and username is None:
             return ErrorMessage(error= "Must provide either user_uuid or username.")
         if username is not None:
