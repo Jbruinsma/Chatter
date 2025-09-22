@@ -1,5 +1,6 @@
-from typing import List
+from typing import List, Any, Coroutine, Sequence
 
+from sqlalchemy import Row
 from sqlalchemy.ext.asyncio.session import AsyncSession
 from sqlalchemy.sql import text
 
@@ -94,3 +95,12 @@ async def retrieve_user_chat_requests(session: AsyncSession, user_id: str | None
     return await _fetch_ids_from_procedure(
         session, "retrieve_request_chat_ids", user_id, user_username
     )
+
+async def search_for_profile_by_username_procedure(session: AsyncSession, username: str, limit: int = 5):
+    result = await session.execute(
+        text("CALL search_for_profile_by_username(:user_username, :results_cap)"),{
+            "user_username": username,
+            "results_cap": limit
+        }
+    )
+    return result.all()

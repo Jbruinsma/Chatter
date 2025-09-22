@@ -1,3 +1,5 @@
+from typing import Any, Coroutine
+
 from fastapi import APIRouter, UploadFile, File, HTTPException, Request, Depends
 from pathlib import Path
 import uuid, os
@@ -5,6 +7,7 @@ import uuid, os
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_session
+from backend.models.chat_overviews import ChatOverviews
 from backend.models.pydantic_models import ErrorMessage
 from backend.procedures import check_if_user_exists
 from backend.utils.chat_utils import find_chat, find_direct_chat_with_user, retrieve_chat_ids
@@ -18,7 +21,7 @@ MAX_BYTES = 5 * 1024 * 1024  # 5 MB
 
 
 @router.get("/{user_uuid}")
-async def get_all_chats(user_uuid: str, request: Request, database_session: AsyncSession = Depends(get_session)):
+async def get_all_chats(user_uuid: str, request: Request, database_session: AsyncSession = Depends(get_session)) -> ErrorMessage | ChatOverviews:
 
     user_status = await check_if_user_exists(database_session, user_id= user_uuid)
     if not user_status:
@@ -26,7 +29,10 @@ async def get_all_chats(user_uuid: str, request: Request, database_session: Asyn
 
     user_chat_ids = await retrieve_chat_ids(database_session, user_id= user_uuid)
 
-    print("CHAT IDS:", user_chat_ids)
+    return ChatOverviews(
+        main=user_chat_ids.get("main", []),
+        requests=user_chat_ids.get("requests", [])
+    )
 
     # def get_chat_overview(chat_id: str):
     #     chat_status, chat_obj = find_chat(chat_id)

@@ -16,7 +16,8 @@ from backend.models.notification_preferences import NotificationPreferences
 from backend.models.successful_login_message import SuccessfulLoginMessage
 from backend.models.user import User
 from backend.models.user_registration import UserRegistration
-from backend.procedures import register_user_procedure, check_if_user_exists, retrieve_user_notification_preferences
+from backend.procedures import register_user_procedure, check_if_user_exists, retrieve_user_notification_preferences, \
+    retrieve_essential_user_info, search_for_profile_by_username_procedure
 from backend.pydantic_models.pydantic_variables import FollowerCount, FollowingCount
 from backend.utils.user_utils import find_user, format_pfp_link, check_password
 from backend.utils.formatting import format_count
@@ -144,9 +145,50 @@ async def register(user_data: UserRegistration, database_session: AsyncSession =
     except Exception as e:
         return ErrorMessage(error= "User registration failed: " + str(e))
 
+@router.get('/search')
+async def search_users(
+        request: Request,
+        username: str | None = Query(None),
+        query_limit: int | None = Query(None),
+        database_session: AsyncSession = Depends(get_session)
+) -> ErrorMessage | Any:
+
+    if not username:
+        return ErrorMessage(error= "Search query is required.")
+
+    if query_limit is None:
+        query_limit = 5
+
+    profile_info = []
+    profile_rows = await search_for_profile_by_username_procedure(database_session, username, limit= query_limit)
+
+    for row_obj in profile_rows:
+        profile_info.append({
+            "id": row_obj.id,
+            "username": row_obj.username,
+            "profilePicture": format_pfp_link(request, row_obj.profile_picture)
+        })
+
+    return profile_info
+
 @router.get('/')
-async def get_user(user_uuid: str | None = Query(None), username: str | None = Query(None)) -> ErrorMessage | Any:
+async def get_user(database_session: AsyncSession = Depends(get_session), user_uuid: str | None = Query(None), username: str | None = Query(None)) -> ErrorMessage | dict:
     error_message: str = "User not found."
+
+    if not user_uuid and not username:
+        ErrorMessage(error= "Must provide either user_uuid or username.")
+
+    try:
+        user_status: bool = await check_if_user_exists(database_session, user_id= user_uuid, user_username= username)
+        if user_status:
+            return {
+                "id": user_uuid,
+                "data": await retrieve_essential_user_info(database_session, user_id= user_uuid, user_username= username)
+            }
+    except Exception as e:
+        pass
+    return ErrorMessage(error= error_message)
+
     try:
         if user_uuid is None and username is None:
             return ErrorMessage(error= "Must provide either user_uuid or username.")

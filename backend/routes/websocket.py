@@ -10,7 +10,8 @@ from backend.procedures import check_if_user_exists
 from backend.pydantic_models.pydantic_variables import ChatId, UserUUID
 
 from backend.utils.user_utils import find_user, user_uuid_to_username
-from backend.utils.chat_utils import create_chat, find_direct_chat_with_user, add_user_to_chat, find_chat
+from backend.utils.chat_utils import create_chat, find_direct_chat_with_user, add_user_to_chat, find_chat, \
+    retrieve_chat_ids
 from backend.utils.database_utils import save_all_databases
 from backend.utils.formatting import format_message_dict_for_json
 
@@ -600,7 +601,7 @@ async def broadcast_to_user_out_of_chat(user_uuid: UserUUID, payload: dict):
 
 @router.websocket('/{user_uuid}')
 async def websocket_endpoint(websocket: WebSocket, user_uuid: UserUUID, database_session: AsyncSession = Depends(get_session)):
-    user_status = await check_if_user_exists(user_uuid)
+    user_status = await check_if_user_exists(database_session, user_id= user_uuid)
 
     if not user_status:
         await websocket.close(1008, "User does not exist.")
@@ -609,10 +610,16 @@ async def websocket_endpoint(websocket: WebSocket, user_uuid: UserUUID, database
     await websocket.accept()
     add_user_to_active_connections(user_uuid, websocket)
 
-    # user_chat_ids = list(user_obj.chat_ids.get("main", set()) | user_obj.chat_ids.get("requests", set()))
-    #
-    # for chat_id in user_chat_ids:
-    #     await attach_user_to_chat(chat_id, user_uuid)
+    try:
+        user_chat_ids = await retrieve_chat_ids(database_session, user_id= user_uuid)
+        user_chat_ids = user_chat_ids.get('main', []) + user_chat_ids.get('requests', [])
+
+    except Exception as e:
+        await send_websocket_error(websocket, "unknown", "bad_json", "Invalid JSON", {"detail": str(e)})
+        return
+
+    for chat_id in user_chat_ids:
+        await attach_user_to_chat(chat_id, user_uuid)
 
     try:
 
